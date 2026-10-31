@@ -7,7 +7,7 @@ Estela pinta los bordes de tu pantalla con los colores de la portada de lo que s
 ## Empieza en 30 segundos
 
 1. Descomprime la carpeta `Estela`. No separes el `.exe` de su carpeta `_internal`.
-2. Abre `Estela.exe`. Aparecerá una estrella en la bandeja del sistema. Si no la ves, pulsa la flecha **^** que hay junto al reloj.
+2. Abre `Estela.exe`. Una estela dibuja la estrella en el centro de la pantalla y se va a la bandeja del sistema (un clic o **Esc** la saltan; se quita en la bandeja, *Animación de inicio*). Si no la ves, pulsa la flecha **^** que hay junto al reloj.
 3. Pon una canción en YouTube Music y haz doble clic en la estrella para abrir la letra.
 
 ## Qué hace

@@ -57,7 +57,9 @@ Hecha en la v13, con 10 transiciones.
 
 ## 2026-10-31 (animación de inicio de Estela)
 
-13. **Intro al abrir el .exe** (propuesta de Animaciones, Lógica y Marketing; sin decidir la variante):
+Hecha la B en la v14. A y C quedan como ideas.
+
+13. **Intro al abrir el .exe** (propuesta de Animaciones, Lógica y Marketing):
     - **B. Estela que dibuja la estrella** (favorita, 2,2 s): un punto de luz entra en diagonal dejando cola, traza las 4 puntas de la estrella de un solo trazo, cierra el aro azul → cian, destello + onda y el logo encoge hacia la bandeja mientras se encienden los bordes.
     - **A. Meteoro que estalla** (2 s): cruza la pantalla en arco, frena en el centro, estalla en chispas y de ahí sale el logo.
     - **C. Lluvia que converge** (2,4 s): 60 estrellas entran desde los lados y forman el logo (la más vistosa, marea un poco).

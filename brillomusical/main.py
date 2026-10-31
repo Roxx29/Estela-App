@@ -13,7 +13,7 @@ from PySide6.QtCore import QCoreApplication, QLockFile, QObject, QSettings, Qt, 
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import artwork, audio, backdrop, beat, bridge, color, cover, history, kinetic, lyrics, nyc, quality, transitions, ytm
+from . import artwork, audio, backdrop, beat, bridge, color, cover, history, intro, kinetic, lyrics, nyc, quality, transitions, ytm
 from .color import FALLBACK
 from .constellation import HELP, SEARCHING, LyricsWindow
 from .glow import Glow
@@ -190,6 +190,10 @@ class Controller(QObject):
                             lambda k: self.window.set_quality(k, show=True))
         self.window.quality_changed.connect(lambda k: qual[k].setChecked(True))
         menu.addSeparator()
+        anim = QAction("Animación de inicio", menu, checkable=True,
+                       checked=self.settings.value("intro_enabled", True, type=bool))
+        anim.toggled.connect(lambda on: self.settings.setValue("intro_enabled", on))
+        menu.addAction(anim)
         menu.addAction("Atajos de teclado", lambda: self.tray.showMessage("Atajos en la ventana de la letra", HELP))
         menu.addAction("Salir de Estela", self._quit)
         self.tray = QSystemTrayIcon(QIcon(resource("icon.ico")), app)
@@ -570,7 +574,12 @@ def main():
     lock = QLockFile(os.path.join(DATA, "app.lock"))
     if not lock.tryLock(100):
         return 0  # ya hay una copia abierta
-    controller = Controller(app)  # noqa: F841 (debe vivir mientras corre la app)
+    controller = Controller(app)
+    st = controller.settings
+    if st.value("intro_enabled", True, type=bool) and not intro.system_quiet():
+        splash = intro.Intro(first=not st.value("intro_seen", False, type=bool), light=controller.quality.light)
+        splash.show()  # noqa: F841 (se borra sola al terminar)
+        st.setValue("intro_seen", True)
     log.info("Inicio")
     return app.exec()
 
