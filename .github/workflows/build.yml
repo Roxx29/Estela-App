@@ -1,4 +1,4 @@
-# Genera BrilloMusical.exe en Windows (los mismos pasos que build.bat) y lo deja como artefacto descargable.
+# Genera Estela.exe en Windows (los mismos pasos que build.bat) y lo deja como artefacto descargable.
 name: Build .exe
 
 on:
@@ -16,8 +16,8 @@ jobs:
       - run: python -m pip install -r requirements.txt pyinstaller
       - run: python -m unittest discover -s tests
       - run: python tools\make_icon.py
-      - run: pyinstaller BrilloMusical.spec --noconfirm --clean
+      - run: pyinstaller Estela.spec --noconfirm --clean
       - uses: actions/upload-artifact@v4
         with:
-          name: BrilloMusical
-          path: dist/BrilloMusical
+          name: Estela
+          path: dist/Estela

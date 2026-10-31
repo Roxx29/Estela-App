@@ -1,4 +1,4 @@
-# Proyecto: BrilloMusical (Windows)
+# Proyecto: Estela (antes BrilloMusical) (Windows)
 
 App de escritorio para Windows que:
 1. Pone un brillo alrededor de la pantalla con el color de la portada de la canción que suena en YouTube Music (YouTube Premium).

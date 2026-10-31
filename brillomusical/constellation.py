@@ -117,7 +117,7 @@ class LyricsWindow(QWidget):
         self.times = []
         self.labels = OrderedDict()  # caché LRU de etiquetas ya dibujadas
         self.rands = {}
-        self.setWindowTitle("BrilloMusical · Letras")
+        self.setWindowTitle("Estela · Letras")
         self.setMinimumSize(480, 270)
         self.setAttribute(Qt.WA_OpaquePaintEvent)
         self.family = _font_family()

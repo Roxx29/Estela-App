@@ -54,3 +54,12 @@ Hecha en la v12 (todas las ideas). También la opción B de la idea 8 (extensió
 Hecha en la v13, con 10 transiciones.
 
 12. **Modo Loco**: un estilo más que va saltando entre Constelación, Latido, Cinta y Nueva York según la música (drops, inicio de estribillo, cambios de estrofa; más a menudo en canciones intensas), con transiciones muy fluidas de formas: iris que se transforma (círculo → estrella → hexágono), cristal roto, líquido que crece con la energía, remolino que se hunde y persiana o barrido inclinado al ritmo. Se dibujan los dos temas a la vez durante la transición (< 1 s) y se mezclan con la forma animada; en Ligera, transiciones más simples. No es viable que cada elemento se transforme en el del otro tema (dibujan cosas distintas): la transformación es de la imagen entera.
+
+## 2026-10-31 (animación de inicio de Estela)
+
+13. **Intro al abrir el .exe** (propuesta de Animaciones, Lógica y Marketing; sin decidir la variante):
+    - **B. Estela que dibuja la estrella** (favorita, 2,2 s): un punto de luz entra en diagonal dejando cola, traza las 4 puntas de la estrella de un solo trazo, cierra el aro azul → cian, destello + onda y el logo encoge hacia la bandeja mientras se encienden los bordes.
+    - **A. Meteoro que estalla** (2 s): cruza la pantalla en arco, frena en el centro, estalla en chispas y de ahí sale el logo.
+    - **C. Lluvia que converge** (2,4 s): 60 estrellas entran desde los lados y forman el logo (la más vistosa, marea un poco).
+    - Técnica: ventana transparente que no recibe clics (como los bordes), solo del tamaño de la animación; la app carga por detrás; clic o Esc la saltan; casilla «Animación de inicio» en la bandeja; no sale con un juego a pantalla completa, en Escritorio remoto ni con las animaciones de Windows desactivadas. Ligera: 1,2 s sin partículas.
+    - Marketing: el nombre «Estela» escrito solo la primera vez (con «Lo que suena, brilla.»); después versión corta de ~0,8 s solo con el símbolo.

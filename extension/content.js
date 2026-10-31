@@ -1,4 +1,4 @@
-// Cada segundo lee la cola de YouTube Music y ejecuta lo que pida BrilloMusical (reproducir una de la cola).
+// Cada segundo lee la cola de YouTube Music y ejecuta lo que pida Estela (reproducir una de la cola).
 // Los selectores son los de la página de YouTube Music: si la web cambia, hay que ajustarlos aquí.
 const text = (el, sel) => ((el.querySelector(sel) || {}).textContent || "").trim();
 const items = () => [...document.querySelectorAll("ytmusic-player-queue-item")];

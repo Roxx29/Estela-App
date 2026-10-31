@@ -1,13 +1,13 @@
-# BrilloMusical
+# Estela
 
-**Tu música, en la luz de tu pantalla.**
+**Lo que suena, brilla.**
 
-BrilloMusical pinta los bordes de tu pantalla con los colores de la portada de lo que suena en YouTube Music y muestra la letra sincronizada de cuatro formas. En **Constelación**, cada palabra es una estrella que se une a la anterior mientras se canta. En **Latido**, la letra aparece blanca y gigante sobre el color de la portada, que late con el ritmo. En **Cinta**, la palabra que suena recorre una cinta que se retuerce en 3D, sobre papel claro. En **Nueva York**, las palabras se enganchan en blanco y negro como un cartel.
+Estela pinta los bordes de tu pantalla con los colores de la portada de lo que suena (YouTube Music, Spotify o cualquier reproductor de Windows) y muestra la letra sincronizada de cuatro formas. En **Constelación**, cada palabra es una estrella que se une a la anterior mientras se canta. En **Latido**, la letra aparece blanca y gigante sobre el color de la portada, que late con el ritmo. En **Cinta**, la palabra que suena recorre una cinta que se retuerce en 3D, sobre papel claro. En **Nueva York**, las palabras se enganchan en blanco y negro como un cartel.
 
 ## Empieza en 30 segundos
 
-1. Descomprime la carpeta `BrilloMusical`. No separes el `.exe` de su carpeta `_internal`.
-2. Abre `BrilloMusical.exe`. Aparecerá una estrella en la bandeja del sistema. Si no la ves, pulsa la flecha **^** que hay junto al reloj.
+1. Descomprime la carpeta `Estela`. No separes el `.exe` de su carpeta `_internal`.
+2. Abre `Estela.exe`. Aparecerá una estrella en la bandeja del sistema. Si no la ves, pulsa la flecha **^** que hay junto al reloj.
 3. Pon una canción en YouTube Music y haz doble clic en la estrella para abrir la letra.
 
 ## Qué hace
@@ -31,7 +31,7 @@ BrilloMusical pinta los bordes de tu pantalla con los colores de la portada de l
 
 **Controles** (lado izquierdo): acerca el ratón al borde izquierdo de la ventana de la letra. Aparecen anterior, −10 s, reproducir/pausa, +10 s y siguiente, que controlan YouTube Music.
 
-**YouTube Music integrado** (opcional): en la bandeja, *Abrir YouTube Music*, o en el sector de YouTube Music de la rueda. Abre YouTube Music dentro de BrilloMusical para buscar y poner canciones sin abrir el navegador. Google no permite iniciar sesión en navegadores integrados en apps, así que ahí funciona sin cuenta; para usar tu Premium y tus listas, pon YouTube Music en Chrome o Edge: BrilloMusical lo detecta igual. Si cierras esa ventana, la música sigue sonando.
+**YouTube Music integrado** (opcional): en la bandeja, *Abrir YouTube Music*, o en el sector de YouTube Music de la rueda. Abre YouTube Music dentro de Estela para buscar y poner canciones sin abrir el navegador. Google no permite iniciar sesión en navegadores integrados en apps, así que ahí funciona sin cuenta; para usar tu Premium y tus listas, pon YouTube Music en Chrome o Edge: Estela lo detecta igual. Si cierras esa ventana, la música sigue sonando.
 
 **Tu playlist con la extensión de Chrome** (opcional): en la bandeja, *Ver tu playlist (extensión de Chrome)…* abre la carpeta de la extensión y explica cómo instalarla (Chrome o Edge → extensiones → Modo de desarrollador → «Cargar descomprimida»). Con ella, la cola de YouTube Music que tienes abierta con tu cuenta aparece en el carrusel, y con un clic en una canción se reproduce en la pestaña.
 
@@ -67,7 +67,7 @@ En *Calidad*, el modo **Automática** mide lo que le cuesta a tu equipo mover la
 
 ## Privacidad
 
-BrilloMusical lee la canción que suena desde los controles multimedia de Windows. Para buscar la letra y la portada HD envía **solo el título y el artista** a LRCLIB, iTunes y Deezer. Puedes desactivar la portada HD en *Carátula → Portada HD*. El estilo *Automático (según el género)* también pregunta el género a iTunes con el título y el artista. Al hacer clic en una canción de *Sonó antes* se abre en el navegador una búsqueda de YouTube Music con su título y artista. La lista de canciones del carrusel no se guarda: se borra al cerrar la app. Con *YouTube Music integrado*, tu sesión de Google (cookies) queda solo en este PC, en `%LOCALAPPDATA%\BrilloMusical\web`. BrilloMusical no ve tu contraseña. Para cerrar sesión, sal desde YouTube Music o borra esa carpeta. La extensión de Chrome solo habla con BrilloMusical en tu propio PC (127.0.0.1) y solo le manda la cola y la canción que suena. La app no guarda ni envía nada más. La caché está en `%LOCALAPPDATA%\BrilloMusical`.
+Estela lee la canción que suena desde los controles multimedia de Windows. Para buscar la letra y la portada HD envía **solo el título y el artista** a LRCLIB, iTunes y Deezer. Puedes desactivar la portada HD en *Carátula → Portada HD*. El estilo *Automático (según el género)* también pregunta el género a iTunes con el título y el artista. Al hacer clic en una canción de *Sonó antes* se abre en el navegador una búsqueda de YouTube Music con su título y artista. La lista de canciones del carrusel no se guarda: se borra al cerrar la app. Con *YouTube Music integrado*, tu sesión de Google (cookies) queda solo en este PC, en `%LOCALAPPDATA%\BrilloMusical\web`. Estela no ve tu contraseña. Para cerrar sesión, sal desde YouTube Music o borra esa carpeta. La extensión de Chrome solo habla con Estela en tu propio PC (127.0.0.1) y solo le manda la cola y la canción que suena. La app no guarda ni envía nada más. La caché está en `%LOCALAPPDATA%\BrilloMusical`.
 
 ## Problemas comunes
 
@@ -75,12 +75,12 @@ BrilloMusical lee la canción que suena desde los controles multimedia de Window
 - **La animación va a tirones**: elige *Calidad → Ligera* en la rueda o en la bandeja.
 - **La letra va adelantada o atrasada**: usa ← / → en la ventana de la letra, o *Sincronizar letra* en la bandeja.
 - **No encuentro cómo salir de pantalla completa**: pulsa **Esc** o haz doble clic.
-- **Google dice «No puedes acceder» al iniciar sesión en YouTube Music integrado**: es una protección de Google para todos los navegadores dentro de apps. Usa YouTube Music en Chrome o Edge; BrilloMusical lo detecta igual.
-- **El .exe no arranca**: abre el que está en `dist\BrilloMusical\`, no el de `build\`.
+- **Google dice «No puedes acceder» al iniciar sesión en YouTube Music integrado**: es una protección de Google para todos los navegadores dentro de apps. Usa YouTube Music en Chrome o Edge; Estela lo detecta igual.
+- **El .exe no arranca**: abre el que está en `dist\Estela\`, no el de `build\`.
 
 ## Para desarrolladores
 
-Con Python 3.12 instalado, haz doble clic en `build.bat`. El script instala las dependencias, pasa los tests y deja el programa en `dist\BrilloMusical\BrilloMusical.exe`. Si abres la app con la variable `BRILLOMUSICAL_DEBUG=1`, guarda un registro detallado en `app.log`.
+Con Python 3.12 instalado, haz doble clic en `build.bat`. El script instala las dependencias, pasa los tests y deja el programa en `dist\Estela\Estela.exe`. Si abres la app con la variable `BRILLOMUSICAL_DEBUG=1`, guarda un registro detallado en `app.log`.
 
 ## Créditos
 

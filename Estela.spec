@@ -1,4 +1,4 @@
-# PyInstaller: carpeta dist\BrilloMusical\ con BrilloMusical.exe (onedir, sin consola, sin UPX)
+# PyInstaller: carpeta dist\Estela\ con Estela.exe (onedir, sin consola, sin UPX)
 from PyInstaller.utils.hooks import collect_submodules
 
 a = Analysis(
@@ -12,9 +12,9 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
-    name="BrilloMusical",
+    name="Estela",
     icon="assets/icon.ico",
     console=False,
     upx=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="BrilloMusical", upx=False)
+coll = COLLECT(exe, a.binaries, a.datas, name="Estela", upx=False)

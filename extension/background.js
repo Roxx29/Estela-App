@@ -1,4 +1,4 @@
-// Lleva lo que lee la pestaña de YouTube Music a BrilloMusical (solo en este PC) y devuelve sus órdenes.
+// Lleva lo que lee la pestaña de YouTube Music a Estela (solo en este PC) y devuelve sus órdenes.
 const APP = "http://127.0.0.1:38917/state";
 
 chrome.runtime.onMessage.addListener((state, sender, reply) => {

@@ -133,7 +133,7 @@ def word_times(lines, idx):
 
 def _get(endpoint, params):
     url = API + endpoint + "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": "BrilloMusical/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Estela/1.0"})
     with urllib.request.urlopen(req, timeout=6) as r:
         return json.load(r)
 

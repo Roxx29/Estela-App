@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "BrilloMusical: tu cola de YouTube Music",
+  "name": "Estela: tu cola de YouTube Music",
   "version": "1.0",
-  "description": "Envía a BrilloMusical (en este PC) la cola de YouTube Music para verla en su carrusel y reproducir desde ahí.",
+  "description": "Envía a Estela (en este PC) la cola de YouTube Music para verla en su carrusel y reproducir desde ahí.",
   "host_permissions": [
     "http://127.0.0.1:38917/*"
   ],

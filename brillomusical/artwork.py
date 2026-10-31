@@ -63,7 +63,7 @@ def pick_deezer(data, title, artist, duration):
 
 
 def _get(url, timeout=6):
-    req = urllib.request.Request(url, headers={"User-Agent": "BrilloMusical/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Estela/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read(MAX_BYTES)
 

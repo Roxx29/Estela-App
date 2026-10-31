@@ -20,7 +20,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from . import color, lyrics
 
 URL = "https://music.youtube.com/"
-UA = "BrilloMusical/1.0"  # solo para descargar portadas y miniaturas
+UA = "Estela/1.0"  # solo para descargar portadas y miniaturas
 POLL_MS = 500
 GONE_AFTER = 5.0
 FRESH = 1.0  # tras cambiar de canción, la duración del <video> aún puede ser la anterior
@@ -83,10 +83,10 @@ def choose(ext, ytm, active="ext"):
 class Window(QWidget):
     def __init__(self, view):
         super().__init__()
-        self.setWindowTitle("BrilloMusical · YouTube Music")
+        self.setWindowTitle("Estela · YouTube Music")
         self.resize(1100, 760)
         tip = QLabel("Google no permite iniciar sesión en navegadores integrados en apps: aquí YouTube Music funciona "
-                     "sin cuenta. Para tu Premium y tus listas, usa YouTube Music en Chrome o Edge: BrilloMusical lo "
+                     "sin cuenta. Para tu Premium y tus listas, usa YouTube Music en Chrome o Edge: Estela lo "
                      "detecta igual. Si cierras esta ventana, la música sigue sonando.")
         tip.setWordWrap(True)
         tip.setStyleSheet("padding: 6px 10px; background: #1b1b22; color: #ddd;")

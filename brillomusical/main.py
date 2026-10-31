@@ -20,6 +20,7 @@ from .glow import Glow
 from .media import MediaWatcher, position
 from .vsync import FrameClock
 
+# la app se llama Estela; la carpeta de datos y los ajustes conservan el nombre antiguo para no perder nada
 DATA = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BrilloMusical")
 DEBOUNCE_MS = 400  # cambio rápido de canción: esperar antes de pedir la letra
 RETRIES_S = (5, 15, 45)  # sin internet
@@ -190,9 +191,9 @@ class Controller(QObject):
         self.window.quality_changed.connect(lambda k: qual[k].setChecked(True))
         menu.addSeparator()
         menu.addAction("Atajos de teclado", lambda: self.tray.showMessage("Atajos en la ventana de la letra", HELP))
-        menu.addAction("Salir de BrilloMusical", self._quit)
+        menu.addAction("Salir de Estela", self._quit)
         self.tray = QSystemTrayIcon(QIcon(resource("icon.ico")), app)
-        self.tray.setToolTip("BrilloMusical")
+        self.tray.setToolTip("Estela")
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(lambda r: r == QSystemTrayIcon.DoubleClick and self._open())
         self.tray.show()
@@ -506,7 +507,7 @@ class Controller(QObject):
             self.glow_pending = True
             self.window.set_mood("normal")  # sin medidor (reserva) no se queda el ambiente de la anterior
             self._apply_mode()
-            self.tray.setToolTip(f"BrilloMusical — {snap['title']} · {snap['artist']}"[:127])
+            self.tray.setToolTip(f"Estela — {snap['title']} · {snap['artist']}"[:127])
             self.window.set_offset(self.offsets.get(self._offset_key()))
             self.window.set_lyrics(SEARCHING, [])
             self.debounce.start()  # también pide la portada grande: así no se dispara con cada salto rápido
@@ -564,7 +565,7 @@ def main():
     QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)  # YouTube Music integrado se carga más tarde
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("BrilloMusical")
+    app.setApplicationName("Estela")
     app.setWindowIcon(QIcon(resource("icon.ico")))
     lock = QLockFile(os.path.join(DATA, "app.lock"))
     if not lock.tryLock(100):

@@ -1,5 +1,5 @@
 @echo off
-rem Genera dist\BrilloMusical\BrilloMusical.exe. Requiere Python 3.12 de 64 bits.
+rem Genera dist\Estela\Estela.exe. Requiere Python 3.12 de 64 bits.
 setlocal
 cd /d "%~dp0"
 
@@ -22,13 +22,13 @@ echo Generando icono...
 python tools\make_icon.py || goto :error
 
 echo Generando el ejecutable...
-pyinstaller BrilloMusical.spec --noconfirm --clean || goto :error
+pyinstaller Estela.spec --noconfirm --clean || goto :error
 rem build\ es temporal: su .exe no arranca (falta python312.dll), se borra para no confundir
 rmdir /s /q build
 
 echo.
-echo Listo: dist\BrilloMusical\BrilloMusical.exe (lleva siempre la carpeta entera)
-explorer "dist\BrilloMusical"
+echo Listo: dist\Estela\Estela.exe (lleva siempre la carpeta entera)
+explorer "dist\Estela"
 pause
 exit /b 0
 

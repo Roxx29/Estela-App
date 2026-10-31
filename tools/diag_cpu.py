@@ -1,4 +1,4 @@
-"""Mide CPU y memoria de BrilloMusical durante 30 s (pip install -r requirements-dev.txt).
+"""Mide CPU y memoria de Estela durante 30 s (pip install -r requirements-dev.txt).
 
 Uso: abre la app, pon música, elige un modo del borde y ejecuta: python tools\\diag_cpu.py
 """
@@ -7,9 +7,9 @@ import time
 import psutil
 
 procs = [p for p in psutil.process_iter(["name", "cmdline"])
-         if p.info["name"] == "BrilloMusical.exe" or "run.py" in " ".join(p.info["cmdline"] or [])]
+         if p.info["name"] in ("Estela.exe", "BrilloMusical.exe") or "run.py" in " ".join(p.info["cmdline"] or [])]
 if not procs:
-    raise SystemExit("BrilloMusical no está abierto")
+    raise SystemExit("Estela no está abierta")
 # prioriza la versión de desarrollo (run.py); el lanzador del venv es un proceso aparte y pequeño
 proc = max(procs, key=lambda p: ("run.py" in " ".join(p.cmdline()), p.memory_info().rss))
 proc.cpu_percent()
