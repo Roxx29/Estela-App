@@ -193,6 +193,30 @@ class TestQuery(unittest.TestCase):
             with self.assertRaises(OSError):
                 lyrics._query("Canción", "Grupo", "Álbum", 201.0)
 
+    def test_letra_sin_tiempos_repartida(self):
+        from unittest import mock
+
+        def fake(endpoint, params):
+            if endpoint == "get":
+                return {"duration": 100.0, "syncedLyrics": None, "plainLyrics": "Uno\n\nDos dos\nTres"}
+            return []
+
+        with mock.patch.object(lyrics, "_get", fake):
+            lines = lyrics._query("Canción", "Grupo", "Álbum", 100.0)
+        self.assertIsInstance(lines, lyrics.Plain)  # no se guarda en caché
+        self.assertEqual([t for _, t in lines], ["Uno", "Dos dos", "Tres"])
+        times = [t for t, _ in lines]
+        self.assertEqual(times, sorted(times))
+        self.assertTrue(8 <= times[0] and times[-1] < 95)
+
+    def test_motivo_del_fallo(self):
+        import ssl
+        import urllib.error
+        self.assertIn("certificado", lyrics.reason(urllib.error.URLError(ssl.SSLCertVerificationError(
+            "CERTIFICATE_VERIFY_FAILED"))))
+        self.assertIn("no responde", lyrics.reason(TimeoutError("timed out")))
+        self.assertIn("Sin conexión", lyrics.reason(OSError("getaddrinfo failed")))
+
     def test_error_del_servidor_no_es_sin_conexion(self):
         import urllib.error
         from unittest import mock

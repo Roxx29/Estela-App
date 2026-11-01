@@ -541,8 +541,8 @@ class Controller(QObject):
                 lines = lyrics.fetch(snap["title"], snap["artist"], snap["album"], snap["duration"])
                 self.lyrics_ready.emit(key, NO_LYRICS if not lines else "", lines)
             except Exception as e:
-                log.warning("Letra no disponible: %s", e)
-                self.lyrics_ready.emit(key, OFFLINE, None)
+                log.warning("Letra no disponible: %r", e, exc_info=not isinstance(e, OSError))
+                self.lyrics_ready.emit(key, lyrics.reason(e), None)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -568,6 +568,11 @@ def main():
                                                        else 512_000, backupCount=1, encoding="utf-8")])
     logging.getLogger("PIL").setLevel(logging.INFO)  # su DEBUG solo ensucia el log
     sys.excepthook = lambda *exc: log.critical("Error no controlado", exc_info=exc)
+    try:  # verificar HTTPS como el navegador: Windows descarga las raíces nuevas (p. ej. las de Let's Encrypt 2026)
+        import truststore
+        truststore.inject_into_ssl()
+    except Exception:
+        log.warning("truststore no disponible: HTTPS con el almacén de Python", exc_info=True)
     QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)  # YouTube Music integrado se carga más tarde
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)

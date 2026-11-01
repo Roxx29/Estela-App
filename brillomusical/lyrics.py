@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -159,8 +160,36 @@ def _get(endpoint, params):
     url = API + endpoint + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": "Estela/1.0"})
     # /get puede buscar fuera de LRCLIB y tardar bastante; las búsquedas son rápidas
-    with urllib.request.urlopen(req, timeout=20 if endpoint == "get" else 10) as r:
+    with urllib.request.urlopen(req, timeout=12 if endpoint == "get" else 8) as r:
         return json.load(r)
+
+
+class Plain(list):
+    """Letra sin tiempos repartida a lo largo de la canción: se muestra, pero no se guarda (otro día puede haber sincronizada)."""
+
+
+def spread(text, duration):
+    """Reparte las líneas de una letra sin tiempos entre el 8 % y el 95 % de la canción; las vacías son pausas."""
+    rows = [r.strip() for r in text.splitlines()]
+    weights = [len(r) + 8 for r in rows]
+    total, acc, out = sum(weights) or 1, 0, Plain()
+    for r, w in zip(rows, weights):
+        if r:
+            out.append((duration * (0.08 + 0.87 * acc / total), r))
+        acc += w
+    return out
+
+
+def reason(e):
+    """Texto para el usuario según el fallo: no todo es "sin conexión"."""
+    s = str(e).lower()
+    if isinstance(e, ssl.SSLError) or "certificate" in s or "ssl" in s:
+        return "No se pudo comprobar el certificado del servidor de letras (antivirus o proxy)"
+    if isinstance(e, TimeoutError) or "timed out" in s:
+        return "El servidor de letras no responde · reintentando…"
+    if isinstance(e, OSError):
+        return "Sin conexión · reintentando…"
+    return "Error al buscar la letra"
 
 
 def _query(title, artist, album, duration):
@@ -169,13 +198,15 @@ def _query(title, artist, album, duration):
     Solo es "sin conexión" si no contesta nada: un error o un /get lento (LRCLIB lo busca fuera y tarda)
     no deben dejar la canción en "Sin conexión · reintentando…".
     """
-    online, err = False, None
+    online, err, down = False, None, 0
 
     def ask(endpoint, params):
-        nonlocal online, err
+        nonlocal online, err, down
+        if down >= 2:  # dos fallos de conexión seguidos: no se espera a las demás (se reintenta luego)
+            return None
         try:
             out = _get(endpoint, params)
-            online = True
+            online, down = True, 0
             return out
         except urllib.error.HTTPError as e:  # 404: no está; otro código: se prueba lo siguiente
             online = True
@@ -184,17 +215,21 @@ def _query(title, artist, album, duration):
             online = True
             err = err or e
             log.info("LRCLIB %s: respuesta rara", endpoint)
-        except OSError as e:  # sin red o tiempo agotado
-            err = e
+        except OSError as e:  # sin red, certificado o tiempo agotado
+            err, down = e, down + 1
             log.info("LRCLIB %s: %s", endpoint, e)
         return None
 
+    plain = None
     if duration:  # /get también sin álbum: si LRCLIB no la tiene, la busca fuera (así salían muchas de vídeos)
         item = ask("get", {"track_name": title, "artist_name": artist, "album_name": album,
                            "duration": round(duration)})
         if isinstance(item, dict) and item.get("syncedLyrics"):
             log.debug("Letra de get, diferencia de duración %.1f s", (item.get("duration") or 0) - duration)
             return parse_lrc(item["syncedLyrics"])
+        plain = item.get("plainLyrics") if isinstance(item, dict) else None
+    else:
+        plain = None
     song = _FEAT.sub("", title).strip()
     tries = [{"track_name": title, "artist_name": main_artist(artist)}]
     parts = _DASH.split(song, 1)
@@ -204,14 +239,19 @@ def _query(title, artist, album, duration):
     tries += [{"q": f"{main_artist(artist)} {song}".strip()}, {"q": song}]  # nombres que no cuadran del todo
     tol = VIDEO_TOL if not album else 3
     for params in tries:
-        found = [i for i in ask("search", params) or [] if isinstance(i, dict) and i.get("syncedLyrics")]
+        items = [i for i in ask("search", params) or [] if isinstance(i, dict)]
         if duration:  # la versión de duración más parecida (otra versión = letra desfasada)
-            found = sorted((i for i in found if abs((i.get("duration") or 0) - duration) <= tol),
+            items = sorted((i for i in items if abs((i.get("duration") or 0) - duration) <= tol),
                            key=lambda i: abs((i.get("duration") or 0) - duration))
+        found = [i for i in items if i.get("syncedLyrics")]
+        plain = plain or next((i["plainLyrics"] for i in items if i.get("plainLyrics")), None)
         if found:
             log.debug("Letra de search %s, diferencia de duración %.1f s", list(params),
                       (found[0].get("duration") or 0) - duration)
             return parse_lrc(found[0]["syncedLyrics"])
+    if plain and duration:  # sin sincronizada: la letra normal repartida en el tiempo, mejor que nada
+        log.info("Letra sin tiempos (aproximada)")
+        return spread(plain, duration)
     if not online:
         raise err if isinstance(err, OSError) else OSError("LRCLIB no responde")
     return None if err else []
@@ -231,8 +271,8 @@ def fetch(title, artist, album, duration):
     except (OSError, ValueError):
         pass
     lines = _query(title, artist, album, duration)
-    if lines is None:
-        return []  # alguna consulta falló: "sin letra" ahora, pero no se guarda (la próxima vez se busca)
+    if lines is None or isinstance(lines, Plain):
+        return lines or []  # aproximada o con algún fallo: se muestra, pero no se guarda (la próxima vez se busca)
     if not duration:
         return lines  # sin duración puede ser otra versión: no se guarda en caché
     try:
