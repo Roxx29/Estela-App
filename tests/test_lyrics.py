@@ -163,6 +163,32 @@ class TestQuery(unittest.TestCase):
             self.assertEqual(lyrics._query("Canción", "Grupo", "Álbum", 212.0), [])  # con álbum, ±3 s
         self.assertNotIn("album_name", calls[0])  # vídeo sin álbum: no se usa /get
 
+    def test_get_lento_no_es_sin_conexion(self):
+        from unittest import mock
+
+        def fake(endpoint, params):
+            if endpoint == "get":
+                raise TimeoutError("timed out")
+            return [{"duration": 200.0, "syncedLyrics": "[00:01.00]S"}]
+
+        with mock.patch.object(lyrics, "_get", fake):
+            self.assertEqual(lyrics._query("Canción", "Grupo", "Álbum", 201.0), [(1.0, "S")])
+
+        def none(endpoint, params):
+            if endpoint == "get":
+                raise TimeoutError("timed out")
+            return []
+
+        with mock.patch.object(lyrics, "_get", none):
+            self.assertIsNone(lyrics._query("Canción", "Grupo", "Álbum", 201.0))  # sin letra, sin guardarlo
+
+        def down(endpoint, params):
+            raise OSError("sin red")
+
+        with mock.patch.object(lyrics, "_get", down):
+            with self.assertRaises(OSError):
+                lyrics._query("Canción", "Grupo", "Álbum", 201.0)
+
     def test_error_del_servidor_no_es_sin_conexion(self):
         import urllib.error
         from unittest import mock

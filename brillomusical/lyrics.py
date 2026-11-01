@@ -152,29 +152,46 @@ def _get(endpoint, params):
 
 
 def _query(title, artist, album, duration):
-    if album and duration:  # /get pide todos los datos: un vídeo sin álbum daba error y salía "Sin conexión"
+    """Letra de LRCLIB; None si alguna consulta falló (no se guarda "sin letra"). Lanza OSError si ninguna respondió.
+
+    Solo es "sin conexión" si no contesta nada: un error o un /get lento (LRCLIB lo busca fuera y tarda)
+    no deben dejar la canción en "Sin conexión · reintentando…".
+    """
+    online, err = False, None
+
+    def ask(endpoint, params):
+        nonlocal online, err
         try:
-            item = _get("get", {"track_name": title, "artist_name": artist, "album_name": album,
-                                "duration": round(duration)})
-            if item.get("syncedLyrics"):
-                log.debug("Letra de get, diferencia de duración %.1f s", (item.get("duration") or 0) - duration)
-                return parse_lrc(item["syncedLyrics"])
-        except urllib.error.HTTPError as e:  # 404: no está; otro código: se busca igual
-            log.info("LRCLIB get: %s", e.code)
+            out = _get(endpoint, params)
+            online = True
+            return out
+        except urllib.error.HTTPError as e:  # 404: no está; otro código: se prueba lo siguiente
+            online = True
+            log.info("LRCLIB %s: %s", endpoint, e.code)
+        except ValueError as e:  # respondió algo que no es JSON
+            online = True
+            err = err or e
+            log.info("LRCLIB %s: respuesta rara", endpoint)
+        except OSError as e:  # sin red o tiempo agotado
+            err = e
+            log.info("LRCLIB %s: %s", endpoint, e)
+        return None
+
+    if album and duration:  # /get pide todos los datos: un vídeo no tiene álbum
+        item = ask("get", {"track_name": title, "artist_name": artist, "album_name": album,
+                           "duration": round(duration)})
+        if isinstance(item, dict) and item.get("syncedLyrics"):
+            log.debug("Letra de get, diferencia de duración %.1f s", (item.get("duration") or 0) - duration)
+            return parse_lrc(item["syncedLyrics"])
+    song = _FEAT.sub("", title).strip()
     tries = [{"track_name": title, "artist_name": main_artist(artist)}]
-    if not album:  # un vídeo cualquiera: el canal puede no ser el artista y el título traer de todo
-        song = _FEAT.sub("", title).strip()
-        parts = _DASH.split(song, 1)
-        if len(parts) == 2:  # "Artista - Canción" con un canal que no se parece al artista
-            tries.append({"track_name": parts[1], "artist_name": main_artist(parts[0])})
-        tries += [{"q": f"{main_artist(artist)} {song}".strip()}, {"q": song}]
+    parts = _DASH.split(song, 1)
+    if len(parts) == 2 and not album:  # "Artista - Canción" con un canal que no se parece al artista
+        tries.append({"track_name": parts[1], "artist_name": main_artist(parts[0])})
+    tries += [{"q": f"{main_artist(artist)} {song}".strip()}, {"q": song}]  # nombres que no cuadran del todo
     tol = VIDEO_TOL if not album else 3
     for params in tries:
-        try:
-            found = [i for i in _get("search", params) if i.get("syncedLyrics")]
-        except urllib.error.HTTPError as e:  # la respuesta llegó: hay conexión, se prueba la siguiente búsqueda
-            log.info("LRCLIB search: %s", e.code)
-            continue
+        found = [i for i in ask("search", params) or [] if isinstance(i, dict) and i.get("syncedLyrics")]
         if duration:  # la versión de duración más parecida (otra versión = letra desfasada)
             found = sorted((i for i in found if abs((i.get("duration") or 0) - duration) <= tol),
                            key=lambda i: abs((i.get("duration") or 0) - duration))
@@ -182,7 +199,9 @@ def _query(title, artist, album, duration):
             log.debug("Letra de search %s, diferencia de duración %.1f s", list(params),
                       (found[0].get("duration") or 0) - duration)
             return parse_lrc(found[0]["syncedLyrics"])
-    return []
+    if not online:
+        raise err if isinstance(err, OSError) else OSError("LRCLIB no responde")
+    return None if err else []
 
 
 def fetch(title, artist, album, duration):
@@ -198,6 +217,8 @@ def fetch(title, artist, album, duration):
     except (OSError, ValueError):
         pass
     lines = _query(title, artist, album, duration)
+    if lines is None:
+        return []  # alguna consulta falló: "sin letra" ahora, pero no se guarda (la próxima vez se busca)
     if not duration:
         return lines  # sin duración puede ser otra versión: no se guarda en caché
     try:
