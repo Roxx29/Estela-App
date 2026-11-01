@@ -247,6 +247,26 @@ class TestQuery(unittest.TestCase):
             self.assertEqual(os.listdir(tmp), [])  # y no se guarda "sin letra"
         self.assertIn("no responde", lyrics.reason(ctx.exception))
 
+    def test_cache_de_antes_de_v2(self):
+        import hashlib
+        import json
+        import tempfile
+        from unittest import mock
+
+        def down(endpoint, params):
+            raise OSError("sin red")
+
+        old = hashlib.sha1("grupo|canción|205".encode()).hexdigest()
+        with mock.patch.object(lyrics, "_get", down), tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lyrics, "CACHE", tmp):
+            with open(os.path.join(tmp, old + ".json"), "w", encoding="utf-8") as f:
+                json.dump([[1.0, "Vieja"]], f)
+            self.assertEqual(lyrics.fetch("Canción", "Grupo", "Álbum", 205.0), [(1.0, "Vieja")])
+            with open(os.path.join(tmp, old + ".json"), "w", encoding="utf-8") as f:
+                json.dump([], f)  # su "sin letra" no cuenta: se busca otra vez
+            with self.assertRaises(OSError):
+                lyrics.fetch("Canción", "Grupo", "Álbum", 205.0)
+
 
 class TestAd(unittest.TestCase):
     def test_anuncios(self):

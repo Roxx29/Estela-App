@@ -272,6 +272,14 @@ def fetch(title, artist, album, duration):
             return [tuple(x) for x in lines]
     except (OSError, ValueError):
         pass
+    old = hashlib.sha1(f"{artist}|{title}|{round(duration)}".lower().encode()).hexdigest()
+    try:  # letras guardadas antes de "v2": sirven si tienen letra (sobre todo con LRCLIB caído)
+        with open(os.path.join(CACHE, old + ".json"), encoding="utf-8") as f:
+            lines = json.load(f)
+        if lines:
+            return [tuple(x) for x in lines]
+    except (OSError, ValueError):
+        pass
     lines = _query(title, artist, album, duration)
     if lines is None:  # alguna consulta falló: no es "sin letra", que la app reintente
         raise OSError("LRCLIB no responde")
