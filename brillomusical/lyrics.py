@@ -147,19 +147,20 @@ def word_times(lines, idx):
 def _get(endpoint, params):
     url = API + endpoint + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": "Estela/1.0"})
-    with urllib.request.urlopen(req, timeout=6) as r:
+    with urllib.request.urlopen(req, timeout=10) as r:  # LRCLIB a veces tarda
         return json.load(r)
 
 
 def _query(title, artist, album, duration):
-    try:
-        item = _get("get", {"track_name": title, "artist_name": artist, "album_name": album, "duration": round(duration)})
-        if item.get("syncedLyrics"):
-            log.debug("Letra de get, diferencia de duración %.1f s", (item.get("duration") or 0) - duration)
-            return parse_lrc(item["syncedLyrics"])
-    except urllib.error.HTTPError as e:
-        if e.code != 404:
-            raise
+    if album and duration:  # /get pide todos los datos: un vídeo sin álbum daba error y salía "Sin conexión"
+        try:
+            item = _get("get", {"track_name": title, "artist_name": artist, "album_name": album,
+                                "duration": round(duration)})
+            if item.get("syncedLyrics"):
+                log.debug("Letra de get, diferencia de duración %.1f s", (item.get("duration") or 0) - duration)
+                return parse_lrc(item["syncedLyrics"])
+        except urllib.error.HTTPError as e:  # 404: no está; otro código: se busca igual
+            log.info("LRCLIB get: %s", e.code)
     tries = [{"track_name": title, "artist_name": main_artist(artist)}]
     if not album:  # un vídeo cualquiera: el canal puede no ser el artista y el título traer de todo
         song = _FEAT.sub("", title).strip()
@@ -169,7 +170,11 @@ def _query(title, artist, album, duration):
         tries += [{"q": f"{main_artist(artist)} {song}".strip()}, {"q": song}]
     tol = VIDEO_TOL if not album else 3
     for params in tries:
-        found = [i for i in _get("search", params) if i.get("syncedLyrics")]
+        try:
+            found = [i for i in _get("search", params) if i.get("syncedLyrics")]
+        except urllib.error.HTTPError as e:  # la respuesta llegó: hay conexión, se prueba la siguiente búsqueda
+            log.info("LRCLIB search: %s", e.code)
+            continue
         if duration:  # la versión de duración más parecida (otra versión = letra desfasada)
             found = sorted((i for i in found if abs((i.get("duration") or 0) - duration) <= tol),
                            key=lambda i: abs((i.get("duration") or 0) - duration))

@@ -553,6 +553,8 @@ class Controller(QObject):
             if self.retry < len(RETRIES_S):
                 QTimer.singleShot(RETRIES_S[self.retry] * 1000, lambda: key == self.track and self._fetch())
                 self.retry += 1
+            else:
+                status = "Sin conexión con el servidor de letras"  # ya no reintenta: que no diga "reintentando"
             lines = []
         self.window.set_lyrics(status, lines)
 

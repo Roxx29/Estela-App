@@ -161,6 +161,20 @@ class TestQuery(unittest.TestCase):
             # vídeo de 212 s (con intro) en un canal de recopilaciones: tolerancia de vídeo
             self.assertEqual(lyrics._query("Artista - Canción (feat. Y)", "Canal Música", "", 212.0), [(1.0, "V")])
             self.assertEqual(lyrics._query("Canción", "Grupo", "Álbum", 212.0), [])  # con álbum, ±3 s
+        self.assertNotIn("album_name", calls[0])  # vídeo sin álbum: no se usa /get
+
+    def test_error_del_servidor_no_es_sin_conexion(self):
+        import urllib.error
+        from unittest import mock
+
+        def fake(endpoint, params):
+            if endpoint == "get" or "q" not in params:
+                raise urllib.error.HTTPError("u", 400, "x", None, None)
+            return [{"duration": 200.0, "syncedLyrics": "[00:01.00]Q"}]
+
+        with mock.patch.object(lyrics, "_get", fake):
+            self.assertEqual(lyrics._query("Canción", "Canal", "", 205.0), [(1.0, "Q")])
+            self.assertEqual(lyrics._query("Canción", "Grupo", "Álbum", 205.0), [])  # sin letra, no excepción
 
 
 class TestAd(unittest.TestCase):
