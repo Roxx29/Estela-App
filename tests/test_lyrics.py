@@ -27,6 +27,10 @@ class TestClean(unittest.TestCase):
         self.assertEqual(lyrics.clean("Canción (Videoclip) [Prod. X]", "Grupo"), ("Canción", "Grupo"))
         self.assertEqual(lyrics.clean("Lana Del Rey - Video Games", "LanaDelReyVEVO"), ("Video Games", "Lana Del Rey"))
         self.assertEqual(lyrics.clean("Canción - Video Oficial", "Grupo"), ("Canción", "Grupo"))
+        self.assertEqual(lyrics.clean("TRUENO || RAIN III", "Trueno"), ("RAIN III", "TRUENO"))
+        self.assertEqual(lyrics.clean("RAIN III | Trueno", "Trueno"), ("RAIN III", "Trueno"))
+        self.assertEqual(lyrics.clean("TRUENO - RAIN III (Prod. Tatool)", "Trueno"), ("RAIN III", "TRUENO"))
+        self.assertEqual(lyrics.clean("RAIN III", "Trueno"), ("RAIN III", "Trueno"))
 
     def test_artista_principal(self):
         self.assertEqual(lyrics.main_artist("A, B & C feat. D"), "A")
@@ -161,7 +165,7 @@ class TestQuery(unittest.TestCase):
             # vídeo de 212 s (con intro) en un canal de recopilaciones: tolerancia de vídeo
             self.assertEqual(lyrics._query("Artista - Canción (feat. Y)", "Canal Música", "", 212.0), [(1.0, "V")])
             self.assertEqual(lyrics._query("Canción", "Grupo", "Álbum", 212.0), [])  # con álbum, ±3 s
-        self.assertNotIn("album_name", calls[0])  # vídeo sin álbum: no se usa /get
+        self.assertEqual(calls[0].get("album_name"), "")  # /get también sin álbum: LRCLIB la busca fuera
 
     def test_get_lento_no_es_sin_conexion(self):
         from unittest import mock

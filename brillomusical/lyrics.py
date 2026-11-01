@@ -19,10 +19,11 @@ _JUNK = re.compile(
     r"remaster\w*)\b[^\)\]]*[\)\]]",
     re.I,
 )
-# vídeos de YouTube: "Canción | lo que sea" y "Canción - Video Oficial" / "Canción Official Music Video" sin paréntesis
-_TAIL = re.compile(r"\s+[|｜].*$|\s+(?:[-–—]\s+)?(?:(?:official|oficial)(?:\s+(?:music|video|audio|lyrics?|visuali[sz]er))*"
+# vídeos de YouTube: "Canción - Video Oficial" / "Canción Official Music Video" sin paréntesis
+_TAIL = re.compile(r"\s+(?:[-–—]\s+)?(?:(?:official|oficial)(?:\s+(?:music|video|audio|lyrics?|visuali[sz]er))*"
                    r"|(?:music\s+)?(?:video|videoclip|lyrics?|letra)(?:\s+(?:oficial|official))?)$", re.I)
 _DASH = re.compile(r"\s+[-–—]\s+")
+_PIPE = re.compile(r"\s*(?:\|+|｜)\s*")
 _FEAT = re.compile(r"\s*[\(\[]?\b(?:feat|ft|featuring)\b\.?[^\)\]]*[\)\]]?", re.I)
 VIDEO_TOL = 20  # un vídeo (sin álbum) dura más que la canción por la intro o el final
 _TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
@@ -78,13 +79,23 @@ def _squash(s):
     return re.sub(r"\W", "", s.lower())
 
 
+def _same(a, b):
+    a, b = _squash(a), _squash(b)
+    return bool(a and b) and (a in b or b in a)
+
+
 def clean(title, artist):
     title = _TAIL.sub("", _JUNK.sub("", title)).strip()
     artist = re.sub(r"\s*-\s*Topic$|VEVO$|\s+(official|oficial)$", "", artist.strip(), flags=re.I).strip()
-    parts = _DASH.split(title, 1)
-    # "Artista - Canción": el canal suele ser el artista con otra forma (BadBunnyVEVO, "Bad Bunny Official")
-    if len(parts) == 2 and (not artist or _squash(parts[0]) in _squash(artist) or _squash(artist) in _squash(parts[0])):
-        artist, title = (p.strip() for p in parts)
+    segs = [p for p in _PIPE.split(title) if p]
+    if len(segs) > 1:  # "Artista - Canción | Álbum": sobra lo de después; "TRUENO || RAIN III": es como un guion
+        title = segs[0] if _DASH.search(segs[0]) else f"{segs[0]} - {segs[1]}"
+    parts = [p.strip() for p in _DASH.split(title, 1)]
+    # "Artista - Canción" (o "Canción - Artista"): el canal suele ser el artista con otra forma (BadBunnyVEVO)
+    if len(parts) == 2 and (not artist or _same(parts[0], artist)):
+        artist, title = parts
+    elif len(parts) == 2 and _same(parts[1], artist):
+        title = parts[0]
     return title, artist
 
 
@@ -147,7 +158,8 @@ def word_times(lines, idx):
 def _get(endpoint, params):
     url = API + endpoint + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": "Estela/1.0"})
-    with urllib.request.urlopen(req, timeout=10) as r:  # LRCLIB a veces tarda
+    # /get puede buscar fuera de LRCLIB y tardar bastante; las búsquedas son rápidas
+    with urllib.request.urlopen(req, timeout=20 if endpoint == "get" else 10) as r:
         return json.load(r)
 
 
@@ -177,7 +189,7 @@ def _query(title, artist, album, duration):
             log.info("LRCLIB %s: %s", endpoint, e)
         return None
 
-    if album and duration:  # /get pide todos los datos: un vídeo no tiene álbum
+    if duration:  # /get también sin álbum: si LRCLIB no la tiene, la busca fuera (así salían muchas de vídeos)
         item = ask("get", {"track_name": title, "artist_name": artist, "album_name": album,
                            "duration": round(duration)})
         if isinstance(item, dict) and item.get("syncedLyrics"):
@@ -186,8 +198,9 @@ def _query(title, artist, album, duration):
     song = _FEAT.sub("", title).strip()
     tries = [{"track_name": title, "artist_name": main_artist(artist)}]
     parts = _DASH.split(song, 1)
-    if len(parts) == 2 and not album:  # "Artista - Canción" con un canal que no se parece al artista
-        tries.append({"track_name": parts[1], "artist_name": main_artist(parts[0])})
+    if len(parts) == 2:  # quedó un guion: "Artista - Canción" o "Canción - Artista" con un canal raro
+        tries += [{"track_name": parts[1], "artist_name": main_artist(parts[0])},
+                  {"track_name": parts[0], "artist_name": main_artist(parts[1])}]
     tries += [{"q": f"{main_artist(artist)} {song}".strip()}, {"q": song}]  # nombres que no cuadran del todo
     tol = VIDEO_TOL if not album else 3
     for params in tries:
@@ -207,7 +220,8 @@ def _query(title, artist, album, duration):
 def fetch(title, artist, album, duration):
     """Lista de (segundos, texto); [] si no hay letra sincronizada. Lanza OSError sin conexión."""
     title, artist = clean(title, artist)
-    key = hashlib.sha1(f"{artist}|{title}|{round(duration)}".lower().encode()).hexdigest()
+    # "v2": los "sin letra" guardados por versiones que fallaban no cuentan
+    key = hashlib.sha1(f"v2|{artist}|{title}|{round(duration)}".lower().encode()).hexdigest()
     path = os.path.join(CACHE, key + ".json")
     try:
         with open(path, encoding="utf-8") as f:
