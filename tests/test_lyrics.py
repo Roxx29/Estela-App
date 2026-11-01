@@ -1,3 +1,4 @@
+import os
 import unittest
 
 from brillomusical import lyrics
@@ -229,6 +230,22 @@ class TestQuery(unittest.TestCase):
         with mock.patch.object(lyrics, "_get", fake):
             self.assertEqual(lyrics._query("Canción", "Canal", "", 205.0), [(1.0, "Q")])
             self.assertEqual(lyrics._query("Canción", "Grupo", "Álbum", 205.0), [])  # sin letra, no excepción
+
+    def test_lrclib_caido_no_es_sin_letra(self):
+        import tempfile
+        import urllib.error
+        from unittest import mock
+
+        def bad_gateway(endpoint, params):
+            raise urllib.error.HTTPError("u", 502, "Bad Gateway", None, None)
+
+        with mock.patch.object(lyrics, "_get", bad_gateway), tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lyrics, "CACHE", tmp):
+            self.assertIsNone(lyrics._query("Canción", "Grupo", "Álbum", 205.0))
+            with self.assertRaises(OSError) as ctx:  # la app reintenta en vez de "Sin letra"
+                lyrics.fetch("Canción", "Grupo", "Álbum", 205.0)
+            self.assertEqual(os.listdir(tmp), [])  # y no se guarda "sin letra"
+        self.assertIn("no responde", lyrics.reason(ctx.exception))
 
 
 class TestAd(unittest.TestCase):
