@@ -73,6 +73,7 @@ Estela lee la canción que suena desde los controles multimedia de Windows. Para
 
 - **No detecta la canción**: comprueba que Windows muestra los controles multimedia de tu reproductor (al subir o bajar el volumen con las teclas debería aparecer la canción).
 - **La animación va a tirones**: elige *Calidad → Ligera* en la rueda o en la bandeja.
+- **Con un videoclip la letra va algo desfasada**: el vídeo tiene intro. Ajústala con ← / → (se recuerda para esa canción).
 - **La letra va adelantada o atrasada**: usa ← / → en la ventana de la letra, o *Sincronizar letra* en la bandeja.
 - **No encuentro cómo salir de pantalla completa**: pulsa **Esc** o haz doble clic.
 - **Google dice «No puedes acceder» al iniciar sesión en YouTube Music integrado**: es una protección de Google para todos los navegadores dentro de apps. Usa YouTube Music en Chrome o Edge; Estela lo detecta igual.

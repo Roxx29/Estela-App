@@ -15,9 +15,16 @@ CACHE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "B
 MISS_TTL = 24 * 3600  # "sin letra" se vuelve a buscar al día siguiente
 
 _JUNK = re.compile(
-    r"\s*[\(\[][^\)\]]*\b(official|video|audio|lyrics?|letra|visuali[sz]er|mv|hd|4k|remaster\w*)\b[^\)\]]*[\)\]]",
+    r"\s*[\(\[][^\)\]]*\b(official|oficial|video|videoclip|clip|audio|lyrics?|letra|visuali[sz]er|mv|hd|4k|prod|"
+    r"remaster\w*)\b[^\)\]]*[\)\]]",
     re.I,
 )
+# vídeos de YouTube: "Canción | lo que sea" y "Canción - Video Oficial" / "Canción Official Music Video" sin paréntesis
+_TAIL = re.compile(r"\s+[|｜].*$|\s+(?:[-–—]\s+)?(?:(?:official|oficial)(?:\s+(?:music|video|audio|lyrics?|visuali[sz]er))*"
+                   r"|(?:music\s+)?(?:video|videoclip|lyrics?|letra)(?:\s+(?:oficial|official))?)$", re.I)
+_DASH = re.compile(r"\s+[-–—]\s+")
+_FEAT = re.compile(r"\s*[\(\[]?\b(?:feat|ft|featuring)\b\.?[^\)\]]*[\)\]]?", re.I)
+VIDEO_TOL = 20  # un vídeo (sin álbum) dura más que la canción por la intro o el final
 _TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
 _WTAGS = re.compile(r"<(\d+):(\d+(?:\.\d+)?)>\s*([^<]*)")  # LRC mejorado: <mm:ss.xx> palabra
 _AD = re.compile(r"^(ad|anuncio|advertisement|publicidad)$|\b(anuncio|advertisement|publicidad)\b|\bad ·", re.I)
@@ -67,11 +74,17 @@ class Offsets:
         self.data.pop(key, None)
 
 
+def _squash(s):
+    return re.sub(r"\W", "", s.lower())
+
+
 def clean(title, artist):
-    title = _JUNK.sub("", title).strip()
-    artist = re.sub(r"\s*-\s*Topic$|VEVO$", "", artist.strip()).strip()
-    if " - " in title and (not artist or title.lower().startswith(artist.lower() + " - ")):
-        artist, title = (p.strip() for p in title.split(" - ", 1))
+    title = _TAIL.sub("", _JUNK.sub("", title)).strip()
+    artist = re.sub(r"\s*-\s*Topic$|VEVO$|\s+(official|oficial)$", "", artist.strip(), flags=re.I).strip()
+    parts = _DASH.split(title, 1)
+    # "Artista - Canción": el canal suele ser el artista con otra forma (BadBunnyVEVO, "Bad Bunny Official")
+    if len(parts) == 2 and (not artist or _squash(parts[0]) in _squash(artist) or _squash(artist) in _squash(parts[0])):
+        artist, title = (p.strip() for p in parts)
     return title, artist
 
 
@@ -147,14 +160,23 @@ def _query(title, artist, album, duration):
     except urllib.error.HTTPError as e:
         if e.code != 404:
             raise
-    found = [i for i in _get("search", {"track_name": title, "artist_name": main_artist(artist)})
-             if i.get("syncedLyrics")]
-    if duration:  # la versión de duración más parecida (otra versión = letra desfasada)
-        found = sorted((i for i in found if abs((i.get("duration") or 0) - duration) <= 3),
-                       key=lambda i: abs((i.get("duration") or 0) - duration))
-    if found:
-        log.debug("Letra de search, diferencia de duración %.1f s", (found[0].get("duration") or 0) - duration)
-        return parse_lrc(found[0]["syncedLyrics"])
+    tries = [{"track_name": title, "artist_name": main_artist(artist)}]
+    if not album:  # un vídeo cualquiera: el canal puede no ser el artista y el título traer de todo
+        song = _FEAT.sub("", title).strip()
+        parts = _DASH.split(song, 1)
+        if len(parts) == 2:  # "Artista - Canción" con un canal que no se parece al artista
+            tries.append({"track_name": parts[1], "artist_name": main_artist(parts[0])})
+        tries += [{"q": f"{main_artist(artist)} {song}".strip()}, {"q": song}]
+    tol = VIDEO_TOL if not album else 3
+    for params in tries:
+        found = [i for i in _get("search", params) if i.get("syncedLyrics")]
+        if duration:  # la versión de duración más parecida (otra versión = letra desfasada)
+            found = sorted((i for i in found if abs((i.get("duration") or 0) - duration) <= tol),
+                           key=lambda i: abs((i.get("duration") or 0) - duration))
+        if found:
+            log.debug("Letra de search %s, diferencia de duración %.1f s", list(params),
+                      (found[0].get("duration") or 0) - duration)
+            return parse_lrc(found[0]["syncedLyrics"])
     return []
 
 

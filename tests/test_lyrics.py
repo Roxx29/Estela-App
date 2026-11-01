@@ -19,6 +19,14 @@ class TestClean(unittest.TestCase):
 
     def test_separa_artista_guion_titulo(self):
         self.assertEqual(lyrics.clean("Band - Song (Lyrics)", ""), ("Song", "Band"))
+        # vídeos de YouTube cualquiera
+        self.assertEqual(lyrics.clean("Bad Bunny - DtMF | DeBÍ TiRAR MáS FOToS (Video Oficial)", "BadBunnyVEVO"),
+                         ("DtMF", "Bad Bunny"))
+        self.assertEqual(lyrics.clean("Karol G - Si Antes Te Hubiera Conocido Official Video", "Karol G Official"),
+                         ("Si Antes Te Hubiera Conocido", "Karol G"))
+        self.assertEqual(lyrics.clean("Canción (Videoclip) [Prod. X]", "Grupo"), ("Canción", "Grupo"))
+        self.assertEqual(lyrics.clean("Lana Del Rey - Video Games", "LanaDelReyVEVO"), ("Video Games", "Lana Del Rey"))
+        self.assertEqual(lyrics.clean("Canción - Video Oficial", "Grupo"), ("Canción", "Grupo"))
 
     def test_artista_principal(self):
         self.assertEqual(lyrics.main_artist("A, B & C feat. D"), "A")
@@ -135,6 +143,24 @@ class TestQuery(unittest.TestCase):
 
         with mock.patch.object(lyrics, "_get", fake):
             self.assertEqual(lyrics._query("t", "a", "", 180.0), [(1.0, "B")])
+
+    def test_video_con_canal_que_no_es_el_artista(self):
+        import urllib.error
+        from unittest import mock
+        calls = []
+
+        def fake(endpoint, params):
+            calls.append(params)
+            if endpoint == "get":
+                raise urllib.error.HTTPError("u", 404, "x", None, None)
+            if params.get("artist_name") == "Artista":  # solo encuentra con artista y canción separados
+                return [{"duration": 200.0, "syncedLyrics": "[00:01.00]V"}]
+            return []
+
+        with mock.patch.object(lyrics, "_get", fake):
+            # vídeo de 212 s (con intro) en un canal de recopilaciones: tolerancia de vídeo
+            self.assertEqual(lyrics._query("Artista - Canción (feat. Y)", "Canal Música", "", 212.0), [(1.0, "V")])
+            self.assertEqual(lyrics._query("Canción", "Grupo", "Álbum", 212.0), [])  # con álbum, ±3 s
 
 
 class TestAd(unittest.TestCase):
