@@ -15,7 +15,7 @@ PORT = 38917
 # ID fijo de nuestra extensión (sale de la clave pública "key" de extension/manifest.json): ninguna otra entra
 EXTENSION = "chrome-extension://adojdlfkiohcjpodphaecndmkodipobn"
 MAX_BODY = 256 * 1024
-MAX_ITEMS, MAX_TEXT = 200, 300
+MAX_ITEMS, MAX_TEXT, MAX_LYRICS = 200, 300, 20000
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def _text(v):
 
 
 def clean(state):
-    """Lo que manda la extensión, validado: {"now": {title, artist}, "queue": [{title, artist, thumb, selected}]}."""
+    """Lo que manda la extensión, validado: {"now": {title, artist}, "queue": [{title, artist, thumb, selected}], "lyrics": texto}."""
     if not isinstance(state, dict):
         return None
     now = state.get("now") if isinstance(state.get("now"), dict) else {}
@@ -36,7 +36,9 @@ def clean(state):
             thumb = _text(q.get("thumb"))
             out.append({"title": _text(q.get("title")), "artist": _text(q.get("artist")),
                         "thumb": thumb if thumb.startswith("https://") else "", "selected": q.get("selected") is True})
-    return {"now": {"title": _text(now.get("title")), "artist": _text(now.get("artist"))}, "queue": out}
+    lyrics = state.get("lyrics")
+    return {"now": {"title": _text(now.get("title")), "artist": _text(now.get("artist"))}, "queue": out,
+            "lyrics": lyrics[:MAX_LYRICS] if isinstance(lyrics, str) else ""}
 
 
 class _Server(ThreadingHTTPServer):

@@ -25,7 +25,33 @@ POLL_MS = 500
 GONE_AFTER = 5.0
 FRESH = 1.0  # tras cambiar de canción, la duración del <video> aún puede ser la anterior
 # selectores de YouTube Music (cambian sin aviso: si algo deja de ir, es aquí)
-READ_JS = r"""(() => {
+LYRICS_JS = r"""// Letra de la pestaña "Letra" de YouTube Music (con licencia de Google), una vez por canción. Si la pestaña
+// no está abierta y se puede (ventana propia o pestaña en segundo plano), la abre, la lee y vuelve a "A continuación".
+function estelaLyrics(key, canClick) {
+  const old = window.__estelaLyr;
+  const s = window.__estelaLyr = old && old.key === key ? old : {key, text: "", wait: 0, seen: 0, clicked: false, done: false};
+  if (s.done || !key) return s.text;
+  const tabs = document.querySelectorAll("ytmusic-player-page tp-yt-paper-tab");
+  const tab = tabs[1];
+  if (!tab || tab.hasAttribute("disabled") || tab.getAttribute("aria-disabled") === "true") {
+    if (++s.wait > 8) s.done = true;  // canción sin letra en YouTube Music
+    return "";
+  }
+  if (tab.getAttribute("aria-selected") !== "true" && !tab.classList.contains("iron-selected")) {
+    if (canClick && !s.clicked) { s.clicked = true; tab.click(); }
+    return "";
+  }
+  if (++s.seen < 3) return "";  // un momento: la de la canción anterior aún puede estar
+  const d = document.querySelector("ytmusic-player-page ytmusic-description-shelf-renderer .description");
+  s.text = d ? d.textContent.trim().slice(0, 20000) : "";
+  if (s.text || s.seen > 10) {
+    s.done = true;
+    if (s.clicked && tabs[0]) tabs[0].click();
+  }
+  return s.text;
+}
+"""
+READ_JS = LYRICS_JS + r"""(() => {
   const m = navigator.mediaSession && navigator.mediaSession.metadata, v = document.querySelector('video');
   const txt = (q, s) => ((q.querySelector(s) || {}).textContent || '').trim();
   const queue = [...document.querySelectorAll('ytmusic-player-queue-item')].map(q => ({
@@ -36,7 +62,8 @@ READ_JS = r"""(() => {
     art: m && m.artwork && m.artwork.length ? m.artwork[m.artwork.length - 1].src : '',
     pos: v ? v.currentTime : 0, duration: v && isFinite(v.duration) ? v.duration : 0,
     paused: v ? v.paused : true, rate: v ? v.playbackRate : 1,
-    ad: !!document.querySelector('#movie_player.ad-showing'), queue});
+    ad: !!document.querySelector('#movie_player.ad-showing'), queue,
+    lyrics: m ? estelaLyrics(m.title + '|' + m.artist, true) : ''});
 })()"""
 COMMANDS = {
     "play": "(v => v && (v.paused ? v.play() : v.pause()))(document.querySelector('video'))",
@@ -106,6 +133,7 @@ class Window(QWidget):
 class Ytm(QObject):
     snapshot = Signal(object)
     queue = Signal(object)
+    lyrics = Signal(str, str)  # (título, letra de la pestaña Letra)
 
     def __init__(self, data_dir):
         super().__init__()
@@ -115,6 +143,7 @@ class Ytm(QObject):
         self.last_seen, self.gone = 0.0, False
         self.arts = {}  # url de portada -> (paleta y aspecto, fondo, carátula, art_id), calculado en un hilo
         self.last_queue = None
+        self.last_lyrics = None
         self.timer = QTimer(self, interval=POLL_MS, timeout=self._poll)
 
     def show(self):
@@ -174,6 +203,10 @@ class Ytm(QObject):
         elif now - self.last_seen > GONE_AFTER and not self.gone:
             self.gone = True  # una vez: sin sesión, cargando o sin música (manda el navegador, si suena)
             self.snapshot.emit(None)
+        text = (raw or {}).get("lyrics")
+        if snap and isinstance(text, str) and text and text != self.last_lyrics:
+            self.last_lyrics = text
+            self.lyrics.emit(snap["title"], text)
         queue = (raw or {}).get("queue") or []
         if queue != self.last_queue:
             self.last_queue = queue

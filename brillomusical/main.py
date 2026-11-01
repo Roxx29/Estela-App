@@ -60,6 +60,7 @@ class Controller(QObject):
         self.window.offset_step.connect(self._shift_offset)
         self.track = None  # clave de la canción actual
         self.track_snap = None
+        self.no_lyrics = None  # canción para la que LRCLIB no dio letra
         self.retry = 0
         self.wait_duration = 0
         self.rgb = FALLBACK
@@ -85,6 +86,9 @@ class Controller(QObject):
         self.bridge.state.connect(self._on_browser)
         app.aboutToQuit.connect(self.bridge.stop)
         self.ytm.queue.connect(self._on_queue)
+        # letra de la pestaña "Letra" de YouTube Music: respaldo si LRCLIB no tiene (o no responde)
+        self.page_lyrics = {}  # título en minúsculas -> texto
+        self.ytm.lyrics.connect(self._on_page_lyrics)
         self.window.open_ytm.connect(self.ytm.show)
         self.window.song.connect(self._song)
         self.window.control.connect(self._control)
@@ -249,7 +253,29 @@ class Controller(QObject):
 
     def _on_browser(self, state):
         self.browser = (state, time.monotonic())
+        if state["lyrics"]:
+            self._on_page_lyrics(state["now"]["title"], state["lyrics"])
         self._show_queue()
+
+    def _on_page_lyrics(self, title, text):
+        if self.page_lyrics.get(title.lower()) == text:
+            return
+        if len(self.page_lyrics) > 30:
+            self.page_lyrics.clear()
+        self.page_lyrics[title.lower()] = text
+        if self.track and self.no_lyrics == self.track:
+            self._use_page_lyrics()
+
+    def _use_page_lyrics(self):
+        """Letra de YouTube Music repartida en el tiempo (no trae tiempos) si es de la canción que suena."""
+        snap = self.track_snap
+        text = snap and self.page_lyrics.get(snap["title"].lower())
+        if not text or not snap["duration"]:
+            return False
+        log.info("Letra de YouTube Music (sin tiempos)")
+        self.no_lyrics = None
+        self.window.set_lyrics("", lyrics.spread(text, snap["duration"]))
+        return True
 
     def _browser_queue(self):
         """La cola que manda la extensión, si es reciente y de la canción que suena en el navegador."""
@@ -556,6 +582,10 @@ class Controller(QObject):
             else:
                 status = "Sin conexión con el servidor de letras"  # ya no reintenta: que no diga "reintentando"
             lines = []
+        if not lines:
+            self.no_lyrics = key  # si luego llega la de YouTube Music, se usa
+            if self._use_page_lyrics():
+                return
         self.window.set_lyrics(status, lines)
 
 
