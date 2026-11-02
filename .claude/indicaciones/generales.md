@@ -7,7 +7,7 @@ Se cargan desde `CLAUDE.md`. Si el usuario cambia algo, se actualiza aquí.
 - Cuando el usuario da una idea o un cambio, hacer **un par de preguntas** antes de ponerse (lo que no esté claro).
 
 ## Cómo trabajar
-- **Siempre con todos los agentes** disponibles (`.claude/agents/`), con el flujo de `CLAUDE.md`: ronda de ideas, discusión y el Capitán decide.
+- **Con todos los agentes** disponibles (`.claude/agents/`), con el flujo de `CLAUDE.md`: ronda de ideas, discusión y el Capitán decide. **Cambios pequeños:** solo los agentes del área que toca.
 - **Usar siempre las skills** que apliquen (lista abajo). Revisarlas al empezar cada tarea.
 
 ## Palabras clave
@@ -15,7 +15,8 @@ Se cargan desde `CLAUDE.md`. Si el usuario cambia algo, se actualiza aquí.
 |---|---|
 | «guardado en idea» / «guárdalo como idea» | Solo guardarlo en `docs/ideas.md` (con fecha). No programar. |
 | «desarrollo difícil» | Desarrollar con **Opus** (agentes con `model: opus`). |
-| «desarrollo fácil» | Desarrollar con un modelo más ligero: **Sonnet** (`model: sonnet`); Haiku para tareas mínimas. |
+| «desarrollo fácil» | Desarrollar con un modelo más ligero que Sonnet: **Haiku** (`model: haiku`). |
+| (no dice nada: intermedio) | **Sonnet** (`model: sonnet`). |
 
 ## Skills disponibles y cuándo usarlas
 | Grupo | Skills | Cuándo |
