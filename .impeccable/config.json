@@ -1,0 +1,44 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "assets/remote.html"
+        ],
+        "createdAt": "2026-11-02T00:54:08.249Z",
+        "reason": "brand: Estela is a screen-edge glow app (CLAUDE.md, docs/marca.md); the colored halo mirrors the PC glow"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "assets/remote.html"
+        ],
+        "createdAt": "2026-11-02T00:54:08.263Z",
+        "reason": "img#art is hidden until its blob src is fetched from /api/cover"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "files": [
+          "assets/remote.html"
+        ],
+        "createdAt": "2026-11-02T00:58:25.436Z",
+        "reason": "brand: docs/marca.md sets Inter for text"
+      },
+      {
+        "rule": "radial-halo",
+        "value": "*",
+        "files": [
+          "assets/remote.html"
+        ],
+        "createdAt": "2026-11-02T00:58:25.447Z",
+        "reason": "brand: the cover-colored aura mirrors Estela's screen glow (CLAUDE.md, docs/marca.md)"
+      }
+    ]
+  }
+}
