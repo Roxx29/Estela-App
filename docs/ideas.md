@@ -65,3 +65,14 @@ Hecha la B en la v14. A y C quedan como ideas.
     - **C. Lluvia que converge** (2,4 s): 60 estrellas entran desde los lados y forman el logo (la más vistosa, marea un poco).
     - Técnica: ventana transparente que no recibe clics (como los bordes), solo del tamaño de la animación; la app carga por detrás; clic o Esc la saltan; casilla «Animación de inicio» en la bandeja; no sale con un juego a pantalla completa, en Escritorio remoto ni con las animaciones de Windows desactivadas. Ligera: 1,2 s sin partículas.
     - Marketing: el nombre «Estela» escrito solo la primera vez (con «Lo que suena, brilla.»); después versión corta de ~0,8 s solo con el símbolo.
+
+## 2026-11-02 (controlar Estela desde el móvil)
+
+14. **Mando en el móvil** (Gestor de ideas, Marketing; sin decidir):
+    - **A. Página web servida por Estela en el Wi‑Fi de casa** (recomendada): bandeja → «Controlar desde el móvil…» (apagado de serie) muestra un QR; el móvil abre una página sin instalar nada (se puede añadir a la pantalla de inicio). Play/pausa, anterior/siguiente, ±10 s, portada con el halo de su color, letra en 3 líneas, estilo de letra y de brillo, apagar brillo, ocultar letra, desfase de la letra, cola. Servidor aparte del puente de la extensión, con código secreto en el QR; solo red local. Windows pide permiso al firewall la primera vez (marcar «Redes privadas»); no va en redes de invitados, de universidad ni con VPN. Esfuerzo medio (~200 líneas + una página; `segno` para el QR).
+    - **B. KDE Connect o Unified Remote** (sin código): app en el móvil y en el PC; solo play/pausa, siguiente y volumen de Windows, nada propio de Estela.
+    - **C. PWA con HTTPS**: descartada (certificado autofirmado = avisos en el móvil).
+    - **D. Bluetooth / Enlace Móvil**: descartadas (Enlace Móvil funciona al revés; Bluetooth es frágil).
+    - Por decidir: ¿letra en el móvil o solo botones? ¿Volumen de YouTube Music o de Windows (añade pycaw)?
+15. **Instalador** (Optimización): Inno Setup con LZMA, descarga de ~130–150 MB, con acceso directo y desinstalador.
+16. **WebView2 en vez de QtWebEngine** (Optimización): −190 MB, pero hay que rehacer YouTube Music integrado y el medidor de audio. Riesgo alto.

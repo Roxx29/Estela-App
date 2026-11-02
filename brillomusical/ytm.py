@@ -29,25 +29,35 @@ LYRICS_JS = r"""// Letra de la pestaña "Letra" de YouTube Music (con licencia d
 // no está abierta y se puede (ventana propia o pestaña en segundo plano), la abre, la lee y vuelve a "A continuación".
 function estelaLyrics(key, canClick) {
   const old = window.__estelaLyr;
-  const s = window.__estelaLyr = old && old.key === key ? old : {key, text: "", wait: 0, seen: 0, clicked: false, done: false};
+  let s = old;
+  if (!old || old.key !== key) {
+    // si cambió la canción a mitad de una lectura, se hereda el clic para volver luego a la pestaña del usuario
+    const back = old && !old.done && old.clicked ? old.back : -1;
+    s = window.__estelaLyr = {key, text: "", wait: 0, seen: 0, clicked: back >= 0, back, done: false,
+                              prev: old ? old.text || old.prev : ""};
+  }
   if (s.done || !key) return s.text;
-  const tabs = document.querySelectorAll("ytmusic-player-page tp-yt-paper-tab");
+  const tabs = [...document.querySelectorAll("ytmusic-player-page tp-yt-paper-tab")];
   const tab = tabs[1];
+  const finish = () => { s.done = true; if (s.clicked && tabs[s.back]) tabs[s.back].click(); };
   if (!tab || tab.hasAttribute("disabled") || tab.getAttribute("aria-disabled") === "true") {
-    if (++s.wait > 8) s.done = true;  // canción sin letra en YouTube Music
+    if (++s.wait > 8) finish();  // canción sin letra en YouTube Music
     return "";
   }
   if (tab.getAttribute("aria-selected") !== "true" && !tab.classList.contains("iron-selected")) {
-    if (canClick && !s.clicked) { s.clicked = true; tab.click(); }
+    if (canClick && !s.clicked) {
+      s.back = Math.max(0, tabs.findIndex((t) => t.getAttribute("aria-selected") === "true"));
+      s.clicked = true;
+      tab.click();
+    }
     return "";
   }
-  if (++s.seen < 3) return "";  // un momento: la de la canción anterior aún puede estar
+  if (++s.seen < 3) return "";
   const d = document.querySelector("ytmusic-player-page ytmusic-description-shelf-renderer .description");
-  s.text = d ? d.textContent.trim().slice(0, 20000) : "";
-  if (s.text || s.seen > 10) {
-    s.done = true;
-    if (s.clicked && tabs[0]) tabs[0].click();
-  }
+  const t = d ? d.textContent.trim().slice(0, 20000) : "";
+  if (t && t === s.prev && s.seen <= 10) return "";  // aún es la letra de la canción anterior
+  s.text = t === s.prev ? "" : t;
+  if (s.text || s.seen > 10) finish();
   return s.text;
 }
 """
@@ -63,7 +73,7 @@ READ_JS = LYRICS_JS + r"""(() => {
     pos: v ? v.currentTime : 0, duration: v && isFinite(v.duration) ? v.duration : 0,
     paused: v ? v.paused : true, rate: v ? v.playbackRate : 1,
     ad: !!document.querySelector('#movie_player.ad-showing'), queue,
-    lyrics: m ? estelaLyrics(m.title + '|' + m.artist, true) : ''});
+    lyrics: m ? estelaLyrics(m.title + '|' + m.artist, document.hidden || !document.hasFocus()) : ''});
 })()"""
 COMMANDS = {
     "play": "(v => v && (v.paused ? v.play() : v.pause()))(document.querySelector('video'))",
@@ -133,7 +143,7 @@ class Window(QWidget):
 class Ytm(QObject):
     snapshot = Signal(object)
     queue = Signal(object)
-    lyrics = Signal(str, str)  # (título, letra de la pestaña Letra)
+    lyrics = Signal(str, str, str)  # (título, artista, letra de la pestaña Letra)
 
     def __init__(self, data_dir):
         super().__init__()
@@ -206,7 +216,7 @@ class Ytm(QObject):
         text = (raw or {}).get("lyrics")
         if snap and isinstance(text, str) and text and text != self.last_lyrics:
             self.last_lyrics = text
-            self.lyrics.emit(snap["title"], text)
+            self.lyrics.emit(snap["title"], snap["artist"], text)
         queue = (raw or {}).get("queue") or []
         if queue != self.last_queue:
             self.last_queue = queue

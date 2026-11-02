@@ -17,6 +17,13 @@ jobs:
       - run: python -m unittest discover -s tests
       - run: python tools\make_icon.py
       - run: pyinstaller Estela.spec --noconfirm --clean
+      - name: Tamaño (los 25 archivos más grandes)
+        shell: pwsh
+        run: |
+          $raiz = (Resolve-Path dist/Estela).Path
+          $f = Get-ChildItem $raiz -Recurse -File
+          "Total: {0:N1} MB en {1} archivos" -f (($f | Measure-Object Length -Sum).Sum / 1MB), $f.Count
+          $f | Sort-Object Length -Descending | Select-Object -First 25 @{n='MB'; e={[math]::Round($_.Length / 1MB, 1)}}, @{n='Ruta'; e={$_.FullName.Substring($raiz.Length + 1)}} | Format-Table -AutoSize | Out-String -Width 300
       - uses: actions/upload-artifact@v4
         with:
           name: Estela

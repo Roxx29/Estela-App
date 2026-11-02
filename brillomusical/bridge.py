@@ -38,7 +38,7 @@ def clean(state):
                         "thumb": thumb if thumb.startswith("https://") else "", "selected": q.get("selected") is True})
     lyrics = state.get("lyrics")
     return {"now": {"title": _text(now.get("title")), "artist": _text(now.get("artist"))}, "queue": out,
-            "lyrics": lyrics[:MAX_LYRICS] if isinstance(lyrics, str) else ""}
+            "lyrics": lyrics[:MAX_LYRICS].strip() if isinstance(lyrics, str) else ""}
 
 
 class _Server(ThreadingHTTPServer):
