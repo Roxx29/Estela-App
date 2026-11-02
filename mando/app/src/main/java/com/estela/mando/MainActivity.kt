@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.webkit.JavascriptInterface
@@ -45,7 +46,7 @@ class MainActivity : Activity() {
     /** Contenido dentro de las barras del sistema (Android 15 dibuja de borde a borde). */
     @Suppress("DEPRECATION")
     private fun show(content: View) {
-        web?.let { if (it !== content) { it.destroy(); web = null } }
+        if (web !== content) dropWeb()
         val frame = FrameLayout(this)
         frame.setBackgroundColor(NIGHT)
         frame.addView(content, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -55,6 +56,12 @@ class MainActivity : Activity() {
             insets
         }
         setContentView(frame)
+    }
+
+    /** El WebView se quita de la ventana antes de destruirlo (destruirlo puesto puede cerrar la app). */
+    private fun dropWeb() {
+        web?.let { (it.parent as? ViewGroup)?.removeView(it); it.destroy() }
+        web = null
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -120,13 +127,15 @@ class MainActivity : Activity() {
                     remote(url)
                 }
             }
+            .addOnCanceledListener { if (web == null && prefs.getString("url", null) == null) welcome(null, null) }
             .addOnFailureListener {
                 welcome("No se pudo abrir el lector de QR. Actualiza Google Play Services e inténtalo otra vez.", null)
             }
     }
 
     private fun remote(url: String) {
-        val host = Uri.parse(url).host
+        val target = Uri.parse(url)
+        dropWeb()
         val w = WebView(this)
         web = w
         w.setBackgroundColor(NIGHT)
@@ -135,10 +144,11 @@ class MainActivity : Activity() {
         w.addJavascriptInterface(AppBridge(), "EstelaApp")
         w.webViewClient = object : WebViewClient() {
             // solo la página de Estela: cualquier otro enlace se queda fuera de la app
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = request.url.host != host
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) =
+                request.url.host != target.host || request.url.port != target.port
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) {
+                if (request.isForMainFrame) view.post {  // fuera del aviso del propio WebView, que se va a destruir
                     welcome("Estela no responde. ¿Sigue abierta en el PC y el mando encendido? Revisa que estéis en el mismo Wi‑Fi.", url)
                 }
             }
