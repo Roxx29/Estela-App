@@ -45,6 +45,8 @@ function read() {
     now: { title: m ? m.title : "", artist: m ? m.artist : "" },
     // en una pestaña a la vista no se cambia de pestaña interna: solo se lee si el usuario abrió "Letra"
     lyrics: m ? estelaLyrics(m.title + "|" + m.artist, document.hidden) : "",
+    // lo publica page.js (el reproductor solo se ve desde el mundo de la página)
+    volume: document.documentElement.dataset.estelaVolume ? Number(document.documentElement.dataset.estelaVolume) : null,
     queue: items().map((q) => ({
       title: text(q, ".song-title"),
       artist: text(q, ".byline"),
@@ -55,6 +57,9 @@ function read() {
 }
 
 function run(cmd) {
+  if (cmd && cmd.name === "volume" && Number.isInteger(cmd.index)) {
+    document.dispatchEvent(new CustomEvent("estela-volume", { detail: cmd.index }));  // lo aplica page.js
+  }
   if (cmd && cmd.name === "queue" && Number.isInteger(cmd.index)) {
     // por título: si la cola cambió en ese segundo, el índice ya no es el de esa canción
     const all = items();

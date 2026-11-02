@@ -9,11 +9,12 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QCoreApplication, QLockFile, QObject, QSettings, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QBuffer, QCoreApplication, QLockFile, QObject, QSettings, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import artwork, audio, backdrop, beat, bridge, color, cover, history, intro, kinetic, lyrics, nyc, quality, transitions, ytm
+from . import (artwork, audio, backdrop, beat, bridge, color, cover, history, intro, kinetic, lyrics, nyc, quality, remote,
+               transitions, ytm)
 from .color import FALLBACK
 from .constellation import HELP, SEARCHING, LyricsWindow
 from .glow import Glow
@@ -36,6 +37,20 @@ BG_EVERY = 20.0  # el fondo automático, como mucho cada 20 s
 NO_LYRICS, OFFLINE = "Sin letra para esta canción", "Sin conexión · reintentando…"
 
 log = logging.getLogger("brillomusical")
+
+
+def _png(img):
+    buf = QBuffer()
+    buf.open(QBuffer.WriteOnly)
+    img.save(buf, "PNG")
+    return bytes(buf.data())
+
+
+def _jpeg(img):
+    buf = QBuffer()
+    buf.open(QBuffer.WriteOnly)
+    img.scaled(512, 512, Qt.KeepAspectRatio, Qt.SmoothTransformation).save(buf, "JPG", 85)
+    return bytes(buf.data())
 
 
 def resource(name):
@@ -114,6 +129,17 @@ class Controller(QObject):
         app.aboutToQuit.connect(self._close_audio)
         self._apply_mode()
         self._tray(app)
+        # mando en el móvil: página en el Wi‑Fi de casa (apagado de serie)
+        with open(resource("remote.html"), "rb") as fh:
+            self.remote = remote.Remote(fh.read(), _png(QIcon(resource("icon.ico")).pixmap(192, 192).toImage()))
+        self.remote.command.connect(self._on_remote)
+        self.remote.connected.connect(lambda ip: self.tray.showMessage("Móvil conectado", "Ya puedes manejar Estela "
+                                                                       "desde el móvil."))
+        self.remote_art, self.remote_vol, self.pair = None, (None, 0.0), None
+        self.remote_timer = QTimer(self, interval=500, timeout=self._push_remote)
+        app.aboutToQuit.connect(self.remote.stop)
+        if self.settings.value("remote_enabled", False, type=bool):
+            self._remote_on()
 
     def _tray(self, app):
         menu = QMenu()
@@ -121,9 +147,10 @@ class Controller(QObject):
         f = show.font()
         f.setBold(True)
         show.setFont(f)
-        menu.addAction("Abrir YouTube Music", self.ytm.show)
-        menu.addAction("Ver tu playlist (extensión de Chrome)…", self._extension)
+        local = [menu.addAction("Abrir YouTube Music", self.ytm.show),
+                 menu.addAction("Ver tu playlist (extensión de Chrome)…", self._extension)]
         menu.addAction("Pantalla completa", self._fullscreen)
+        local.append(menu.addAction("Controlar desde el móvil…", self._pair))
         menu.addSeparator()
         toggle = QAction("Brillo en los bordes", menu, checkable=True, checked=self.glow.enabled)
         toggle.toggled.connect(self._toggle_glow)
@@ -199,8 +226,11 @@ class Controller(QObject):
                        checked=self.settings.value("intro_enabled", True, type=bool))
         anim.toggled.connect(lambda on: self.settings.setValue("intro_enabled", on))
         menu.addAction(anim)
-        menu.addAction("Atajos de teclado", lambda: self.tray.showMessage("Atajos en la ventana de la letra", HELP))
-        menu.addAction("Salir de Estela", self._quit)
+        local.append(menu.addAction("Atajos de teclado",
+                                    lambda: self.tray.showMessage("Atajos en la ventana de la letra", HELP)))
+        local.append(menu.addAction("Salir de Estela", self._quit))
+        for act in local:
+            act.setData("local")  # no salen en el móvil
         self.tray = QSystemTrayIcon(QIcon(resource("icon.ico")), app)
         self.tray.setToolTip("Estela")
         self.tray.setContextMenu(menu)
@@ -396,6 +426,118 @@ class Controller(QObject):
         if mode != self.glow.mode:
             log.info("Modo del borde: %s (%s)", mode, "manual" if self.manual != "auto" else "automático")
         self.glow.set_mode(mode)
+
+    # --- mando en el móvil ---
+    def _remote_on(self):
+        token = self.settings.value("remote_token", "") or remote.new_token()
+        self.settings.setValue("remote_token", token)
+        if not self.remote.start(token):
+            self.tray.showMessage("Mando del móvil", "No se pudo abrir: otro programa usa el puerto "
+                                  f"{remote.PORT}. Cierra el programa o reinicia el PC.")
+            return False
+        self.settings.setValue("remote_enabled", True)
+        self.remote_timer.start()
+        self._push_remote()
+        return True
+
+    def _remote_off(self):
+        self.remote_timer.stop()
+        self.remote.stop()
+        self.settings.setValue("remote_enabled", False)
+        self.tray.showMessage("Mando del móvil apagado", "Para volver a usarlo: bandeja → Controlar desde el móvil…")
+
+    def _remote_renew(self):
+        """Código nuevo sin cerrar el puerto (reabrirlo al instante puede fallar): los móviles de antes quedan fuera."""
+        token = remote.new_token()
+        self.settings.setValue("remote_token", token)
+        self.remote.token = token
+        self.remote.seen.clear()
+        return self.remote.url()
+
+    def _pair(self):
+        if not self.remote.running and not self._remote_on():
+            return
+        if self.pair is not None:
+            self.pair.close()
+        self.pair = remote.pair_window(self.remote.url(), self._remote_renew, self._remote_off)
+        self.pair.destroyed.connect(lambda: setattr(self, "pair", None))
+
+    def _menu_tree(self, menu, prefix=""):
+        """El menú de la bandeja para el móvil: así el móvil tiene todos los ajustes y siempre al día."""
+        out = []
+        for i, act in enumerate(menu.actions()):
+            if act.isSeparator() or act.data() == "local" or not act.isVisible():
+                continue
+            label = act.text().replace("&", "")
+            if act.menu():
+                out.append({"label": label, "items": self._menu_tree(act.menu(), f"{prefix}{i}.")})
+            else:
+                group = act.actionGroup()
+                kind = "radio" if group and group.isExclusive() else "check" if act.isCheckable() else "button"
+                out.append({"id": f"{prefix}{i}", "label": label, "kind": kind, "on": act.isChecked()})
+        return out
+
+    def _find_action(self, path):
+        menu, act = self.menu, None
+        for part in path.split("."):
+            acts = menu.actions() if menu else []
+            if not part or int(part) >= len(acts):
+                return None
+            act = acts[int(part)]
+            menu = act.menu()
+        return act
+
+    def _volume(self):
+        v, t = self.remote_vol
+        if v is not None and time.monotonic() - t < 2.5:  # lo que acaba de pedir el móvil, sin esperar al navegador
+            return v
+        if self.active == "ytm":
+            snap = self.sources["ytm"]
+            return snap.get("volume") if snap else None
+        state, t = self.browser
+        return state.get("volume") if state and time.monotonic() - t < 5 else None
+
+    def _push_remote(self):
+        win, snap = self.window, self.window.snap
+        now = None
+        if snap:
+            hexes = ["#%02x%02x%02x" % tuple(c) for c in (snap.get("palette") or [])[:4]]
+            img = win.cover.img
+            if win.cover.art_id != self.remote_art:
+                self.remote_art = win.cover.art_id
+                self.remote.set_cover(_jpeg(img) if img is not None else b"")
+            now = {"title": snap["title"], "artist": snap["artist"], "album": snap["album"], "ad": snap["ad"],
+                   "playing": snap["playing"], "pos": position(snap), "duration": snap["duration"],
+                   "color": "#%02x%02x%02x" % tuple(self.rgb), "palette": hexes, "art": self.remote_art or ""}
+        self.remote.set_state({
+            "now": now, "source": self.active, "volume": self._volume(),
+            "lyrics": {"status": win.status, "offset": win.offset, "lines": [[ln[0], ln[1]] for ln in win.lines]},
+            "queue": [{"title": q["title"], "artist": q["artist"], "thumb": q["thumb"], "selected": q["selected"]}
+                      for q in (win.queue or [])[:100]],
+            "menu": self._menu_tree(self.menu)})
+
+    def _on_remote(self, name, value):
+        if name == "control":
+            self._control(value)
+        elif name == "seek":
+            snap = self.window.snap
+            if snap and not snap["ad"]:
+                self._send("seek", min(value, max(0.0, snap["duration"] - 1)) if snap["duration"] else value)
+        elif name == "volume":
+            self.remote_vol = (value, time.monotonic())
+            if self.active == "ytm":
+                self.ytm.command("volume", value)
+            else:
+                self.bridge.command("volume", value)  # la extensión de Chrome; SMTC no tiene volumen
+        elif name == "queue":
+            queue = self.window.queue or []
+            if value < len(queue):
+                self._song(("next", queue[value], value))
+        elif name == "action":
+            act = self._find_action(value)
+            if act is not None and act.menu() is None and act.data() != "local" and act.isEnabled():
+                act.trigger()
+        self._push_remote()  # el móvil ve el cambio en su siguiente consulta
 
     # --- desfase manual de la letra (por canción) ---
     def _offset_key(self):

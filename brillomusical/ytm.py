@@ -73,6 +73,7 @@ READ_JS = LYRICS_JS + r"""(() => {
     pos: v ? v.currentTime : 0, duration: v && isFinite(v.duration) ? v.duration : 0,
     paused: v ? v.paused : true, rate: v ? v.playbackRate : 1,
     ad: !!document.querySelector('#movie_player.ad-showing'), queue,
+    volume: (p => p && p.getVolume ? p.getVolume() : null)(document.getElementById('movie_player')),
     lyrics: m ? estelaLyrics(m.title + '|' + m.artist, document.hidden || !document.hasFocus()) : ''});
 })()"""
 COMMANDS = {
@@ -82,9 +83,16 @@ COMMANDS = {
     "seek": "document.querySelector('video').currentTime = {arg}",
     "queue": "(q => q && (q.querySelector('ytmusic-play-button-renderer') || q).click())"
              "(document.querySelectorAll('ytmusic-player-queue-item')[{arg}])",
+    # el reproductor de YouTube Music (no el <video>): así su barra de volumen también se mueve
+    "volume": "(p => p && p.setVolume && (p.setVolume({arg}), {arg} > 0 && p.unMute && p.unMute()))"
+              "(document.getElementById('movie_player'))",
 }
 
 log = logging.getLogger(__name__)
+
+
+def _volume(v):
+    return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 100 else None
 
 
 def parse(raw, prev, now):
@@ -105,7 +113,7 @@ def parse(raw, prev, now):
     return {"title": raw["title"], "artist": key[1], "album": key[2], "duration": duration, "ad": ad,
             "playing": not raw.get("paused", True), "pos": pos, "stamp": time.time(), "stamp_ok": True,
             "rate": float(raw.get("rate") or 1.0), "color": None, "palette": [], "backdrop": None, "cover": None,
-            "art_id": None, "art_url": raw.get("art") or ""}, prev
+            "art_id": None, "art_url": raw.get("art") or "", "volume": _volume(raw.get("volume"))}, prev
 
 
 def choose(ext, ytm, active="ext"):

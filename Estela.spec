@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_submodules
 
 a = Analysis(
     ["run.py"],
-    datas=[("assets/icon.ico", "assets"), ("extension", "extension")],  # extensión de Chrome: ver la cola
+    datas=[("assets/icon.ico", "assets"), ("assets/remote.html", "assets"), ("extension", "extension")],  # extensión de Chrome: ver la cola
     # YouTube Music integrado: QtWebEngine se importa al abrir su ventana; necesita Network, Qml, Quick y OpenGL
     hiddenimports=collect_submodules("winrt") + ["PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets"],
     # QtQml/QtQuick: sus hooks copian la carpeta qml/ entera (decenas de MB) y WebEngine no usa ningún .qml;

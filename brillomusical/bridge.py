@@ -24,8 +24,12 @@ def _text(v):
     return v[:MAX_TEXT] if isinstance(v, str) else ""
 
 
+def _volume(v):
+    return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 100 else None
+
+
 def clean(state):
-    """Lo que manda la extensión, validado: {"now": {title, artist}, "queue": [{title, artist, thumb, selected}], "lyrics": texto}."""
+    """Lo que manda la extensión, validado: {now: {title, artist}, queue: [{title, artist, thumb, selected}], lyrics, volume}."""
     if not isinstance(state, dict):
         return None
     now = state.get("now") if isinstance(state.get("now"), dict) else {}
@@ -38,7 +42,7 @@ def clean(state):
                         "thumb": thumb if thumb.startswith("https://") else "", "selected": q.get("selected") is True})
     lyrics = state.get("lyrics")
     return {"now": {"title": _text(now.get("title")), "artist": _text(now.get("artist"))}, "queue": out,
-            "lyrics": lyrics[:MAX_LYRICS].strip() if isinstance(lyrics, str) else ""}
+            "lyrics": lyrics[:MAX_LYRICS].strip() if isinstance(lyrics, str) else "", "volume": _volume(state.get("volume"))}
 
 
 class _Server(ThreadingHTTPServer):

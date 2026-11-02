@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A1430">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Estela">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>Estela</title>
+<style>
+@property --c { syntax: "<color>"; inherits: true; initial-value: #4DA3FF; }
+@property --c2 { syntax: "<color>"; inherits: true; initial-value: #2A7FA8; }
+:root {
+  --night: #0A1430; --bone: #E6E1D7; --star: #4DA3FF; --cyan: #2A7FA8; --white: #fff;
+  --dim: rgba(230, 225, 215, .55); --line: rgba(230, 225, 215, .12); --card: rgba(255, 255, 255, .06);
+  --c: #4DA3FF; --c2: #2A7FA8;
+  --top: env(safe-area-inset-top, 0px); --bottom: env(safe-area-inset-bottom, 0px);
+  transition: --c .9s ease, --c2 .9s ease;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--night); color: var(--bone); overflow: hidden;
+  font: 15px/1.4 Inter, -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--star); outline-offset: 3px; }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* fondo: aura de la portada, cielo de estrellas y el halo de los bordes (el brillo del PC, en pequeño) */
+.aura { position: fixed; inset: -20%; z-index: 0; pointer-events: none; opacity: .55;
+  background: radial-gradient(40% 35% at 25% 20%, color-mix(in srgb, var(--c) 70%, transparent), transparent 70%),
+              radial-gradient(45% 40% at 80% 75%, color-mix(in srgb, var(--c2) 60%, transparent), transparent 70%);
+  filter: blur(30px); animation: drift 24s ease-in-out infinite alternate; }
+@keyframes drift { to { transform: translate(4%, -3%) rotate(8deg) scale(1.08); } }
+#sky { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+.halo { position: fixed; inset: 0; z-index: 5; pointer-events: none; border-radius: 0;
+  box-shadow: inset 0 0 28px 2px color-mix(in srgb, var(--c) 75%, transparent),
+              inset 0 0 80px 6px color-mix(in srgb, var(--c) 30%, transparent);
+  animation: breathe 4.5s ease-in-out infinite; }
+body.paused .halo { animation: none; opacity: .35; }
+@keyframes breathe { 50% { opacity: .55; } }
+
+.app { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column;
+  padding-top: calc(var(--top) + 6px); }
+header { display: flex; align-items: center; gap: 10px; padding: 8px 20px 4px; }
+header .brand { font-weight: 800; letter-spacing: .02em; font-size: 17px; color: var(--white); }
+header .dot { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
+header .dot i { width: 8px; height: 8px; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 10px #3ddc84; }
+header .dot.off i { background: #EE352E; box-shadow: 0 0 10px #EE352E; }
+main { flex: 1; position: relative; overflow: hidden; }
+.view { position: absolute; inset: 0; overflow-y: auto; padding: 8px 20px 24px; opacity: 0; visibility: hidden;
+  transform: translateY(10px); transition: opacity .28s ease, transform .28s ease, visibility 0s .28s;
+  scrollbar-width: none; overscroll-behavior: contain; }
+.view::-webkit-scrollbar { display: none; }
+.view.on { opacity: 1; visibility: visible; transform: none; transition: opacity .28s ease, transform .28s ease; }
+
+/* --- Suena --- */
+#now { display: flex; flex-direction: column; align-items: center; }
+.art { position: relative; width: min(74vw, 46vh, 360px); aspect-ratio: 1; margin: 10px 0 22px; }
+.art .glow { position: absolute; inset: 6%; border-radius: 28px; background: var(--c); filter: blur(38px); opacity: .7;
+  transform: translateY(10%); transition: opacity .6s; }
+.art img, .art .ph { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 22px; object-fit: cover;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .08) inset; }
+.art img { transition: opacity .5s ease, transform .5s cubic-bezier(.2, .8, .2, 1); }
+.art img.swap { opacity: 0; transform: scale(.96); }
+.art .ph { display: grid; place-items: center; background: linear-gradient(145deg, #13214a, #0b1636); }
+body.paused .art img { transform: scale(.94); }
+.meta { width: 100%; max-width: 420px; text-align: left; }
+.meta h1 { margin: 0; font-size: clamp(22px, 6.4vw, 30px); line-height: 1.15; color: var(--white); font-weight: 800;
+  letter-spacing: -.015em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.meta p { margin: 4px 0 0; color: var(--dim); font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta .verse { margin-top: 12px; min-height: 22px; color: color-mix(in srgb, var(--c) 55%, var(--white)); font-style: italic;
+  font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .3s; }
+.bar { width: 100%; max-width: 420px; margin-top: 16px; }
+.times { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; margin-top: 2px; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; margin: 0; }
+input[type=range]::-webkit-slider-runnable-track { height: 5px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--c) var(--p, 0%), rgba(255, 255, 255, .16) var(--p, 0%)); }
+input[type=range]::-moz-range-track { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .16); }
+input[type=range]::-moz-range-progress { height: 5px; border-radius: 3px; background: var(--c); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -5.5px;
+  border-radius: 50%; background: var(--white); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 35%, transparent); }
+input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: var(--white); }
+.controls { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 380px; margin: 14px 0 6px; }
+.controls button { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+  transition: transform .18s cubic-bezier(.3, 1.6, .5, 1), background .2s; }
+.controls button:active, .press { transform: scale(.9); }
+.controls button svg { width: 26px; height: 26px; fill: var(--white); }
+.controls .small svg { width: 24px; height: 24px; opacity: .85; }
+.controls .play { width: 78px; height: 78px; background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--c) 60%, #fff), var(--c) 55%, var(--c2));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--c) 55%, transparent), 0 0 0 1px rgba(255, 255, 255, .25) inset; }
+.controls .play svg { width: 34px; height: 34px; fill: var(--night); }
+.vol { display: flex; align-items: center; gap: 12px; width: 100%; max-width: 420px; margin-top: 10px; }
+.vol svg { width: 20px; height: 20px; fill: var(--dim); flex: none; }
+.vol[hidden] { display: none; }
+.quick { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 18px; }
+.chip { padding: 9px 15px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 14px;
+  transition: background .2s, border-color .2s, transform .15s; }
+.chip:active { transform: scale(.95); }
+.chip.on { background: color-mix(in srgb, var(--c) 28%, transparent); border-color: color-mix(in srgb, var(--c) 70%, transparent); color: var(--white); }
+
+/* --- Letra --- */
+#lyrics { padding: 0 24px; -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent);
+  mask-image: linear-gradient(transparent, #000 18%, #000 78%, transparent); }
+#lines { padding: 38vh 0 45vh; }
+#lines p { margin: 0; padding: 9px 0; font-size: clamp(21px, 6vw, 28px); line-height: 1.25; font-weight: 700;
+  color: rgba(230, 225, 215, .28); transform-origin: left center; transition: color .35s, transform .35s, text-shadow .35s, filter .35s; filter: blur(.4px); }
+#lines p.past { color: rgba(230, 225, 215, .42); }
+#lines p.cur { color: var(--white); transform: scale(1.04); filter: none;
+  text-shadow: 0 0 18px color-mix(in srgb, var(--c) 80%, transparent), 0 0 2px rgba(255, 255, 255, .6); }
+#lines p.gap { height: 1.2em; }
+.status { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 30px; color: var(--dim); font-size: 17px; pointer-events: none; }
+.sync { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; gap: 8px; justify-content: center; align-items: center; z-index: 3; }
+.sync span { font-size: 13px; color: var(--dim); min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+.sync .chip { backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); background: rgba(10, 20, 48, .6); }
+
+/* --- Cola --- */
+.list { display: flex; flex-direction: column; gap: 6px; }
+.item { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 14px; text-align: left; width: 100%;
+  transition: background .2s; }
+.item:active { background: var(--card); }
+.item img, .item .noimg { width: 50px; height: 50px; border-radius: 9px; object-fit: cover; flex: none; background: #13214a; }
+.item b { display: block; color: var(--white); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item small { display: block; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item div { min-width: 0; flex: 1; }
+.item.sel { background: color-mix(in srgb, var(--c) 20%, transparent); box-shadow: inset 3px 0 0 var(--c); }
+.eq { display: flex; gap: 2px; align-items: flex-end; height: 16px; }
+.eq i { width: 3px; background: var(--c); border-radius: 1px; animation: eq .9s ease-in-out infinite; }
+.eq i:nth-child(2) { animation-delay: -.3s; } .eq i:nth-child(3) { animation-delay: -.6s; }
+body.paused .eq i { animation: none; height: 4px; }
+@keyframes eq { 0%, 100% { height: 4px; } 50% { height: 16px; } }
+h2 { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 14px 4px 10px; }
+.empty { color: var(--dim); text-align: center; padding: 50px 20px; }
+
+/* --- Ajustes --- */
+details { background: var(--card); border: 1px solid var(--line); border-radius: 18px; margin-bottom: 10px; overflow: hidden; }
+summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 15px 16px; cursor: pointer; }
+summary::-webkit-details-marker { display: none; }
+summary b { color: var(--white); font-weight: 600; }
+summary small { margin-left: auto; color: color-mix(in srgb, var(--c) 60%, var(--white)); text-align: right; max-width: 50%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+summary::after { content: ""; width: 8px; height: 8px; border: solid var(--dim); border-width: 0 2px 2px 0; transform: rotate(45deg);
+  transition: transform .25s; flex: none; margin-left: 4px; }
+details:not(:has(small))>summary::after { margin-left: auto; }
+details[open]>summary::after { transform: rotate(-135deg); }
+.body { padding: 0 16px 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+.row { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 13px 16px; gap: 14px; text-align: left; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; margin-bottom: 10px; overflow: hidden; }
+.card .row + .row, .body .row + .row { border-top: 1px solid var(--line); }
+.body .row { padding: 12px 0; }
+.sw { width: 50px; height: 30px; border-radius: 15px; background: rgba(255, 255, 255, .18); position: relative; flex: none; transition: background .25s; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff;
+  transition: transform .25s cubic-bezier(.3, 1.4, .5, 1); box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }
+.on > .sw, .sw.on { background: var(--c); }
+.on > .sw::after, .sw.on::after { transform: translateX(20px); }
+.row.link::after { content: "›"; color: var(--dim); font-size: 22px; line-height: 1; }
+.btn { padding: 10px 16px; border-radius: 12px; background: rgba(255, 255, 255, .1); }
+.tip { color: var(--dim); font-size: 13px; text-align: center; padding: 8px 10px 20px; }
+
+/* --- barra de abajo --- */
+nav { position: relative; z-index: 6; display: flex; justify-content: space-around; padding: 8px 10px calc(var(--bottom) + 8px);
+  background: linear-gradient(transparent, rgba(10, 20, 48, .85) 30%); }
+nav button { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--dim); padding: 6px 12px;
+  border-radius: 14px; transition: color .2s; position: relative; }
+nav button svg { width: 24px; height: 24px; fill: currentColor; }
+nav button.on { color: var(--white); }
+nav button.on::before { content: ""; position: absolute; top: -2px; width: 22px; height: 3px; border-radius: 2px; background: var(--c);
+  box-shadow: 0 0 10px var(--c); }
+
+/* --- avisos --- */
+.overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 30px; text-align: center;
+  background: rgba(10, 20, 48, .92); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.overlay[hidden] { display: none; }
+.overlay h3 { color: var(--white); font-size: 22px; margin: 18px 0 8px; }
+.overlay p { color: var(--dim); margin: 0 auto; max-width: 320px; }
+.spin { animation: spin 6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast { position: fixed; left: 50%; bottom: calc(var(--bottom) + 84px); z-index: 30; transform: translate(-50%, 20px); opacity: 0;
+  background: rgba(20, 32, 70, .95); border: 1px solid var(--line); padding: 10px 16px; border-radius: 14px; font-size: 14px;
+  transition: opacity .25s, transform .25s; pointer-events: none; max-width: 86vw; }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: .01s !important; }
+}
+@media (min-height: 760px) { .art { margin-top: 24px; } }
+</style>
+</head>
+<body class="paused">
+<div class="aura"></div>
+<canvas id="sky" aria-hidden="true"></canvas>
+<div class="halo"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-star" viewBox="-12 -12 24 24"><path d="M0-11 2.6-2.6 11 0 2.6 2.6 0 11-2.6 2.6-11 0-2.6-2.6z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4.2" height="14" rx="1.3"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.3"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 6.2v11.6a1 1 0 0 0 1.55.83l8.4-5.8a1 1 0 0 0 0-1.66l-8.4-5.8A1 1 0 0 0 5 6.2z"/><rect x="16.5" y="5" width="2.6" height="14" rx="1.2"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 6.2v11.6a1 1 0 0 1-1.55.83l-8.4-5.8a1 1 0 0 1 0-1.66l8.4-5.8A1 1 0 0 1 19 6.2z"/><rect x="4.9" y="5" width="2.6" height="14" rx="1.2"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/><text x="12" y="16" font-size="6.5" font-weight="700" text-anchor="middle" font-family="sans-serif">10</text></symbol>
+  <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M12 5V2l5 4-5 4V7a6 6 0 1 0 6 6h2a8 8 0 1 1-8-8z"/><text x="12" y="16" font-size="6.5" font-weight="700" text-anchor="middle" font-family="sans-serif">10</text></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></symbol>
+  <symbol id="i-now" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 12.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></symbol>
+  <symbol id="i-lyr" viewBox="0 0 24 24"><path d="M4 6h12v2H4zm0 5h16v2H4zm0 5h10v2H4z"/><circle cx="19.5" cy="6.8" r="1.6"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M3 5h13v2H3zm0 5h13v2H3zm0 5h8v2H3zm13 0v-4l5 3-5 3z"/></symbol>
+  <symbol id="i-set" viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></symbol>
+</svg>
+
+<div class="app">
+  <header>
+    <svg width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="none" stroke="url(#ring)" stroke-width="2"/>
+      <defs><linearGradient id="ring" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4DA3FF"/><stop offset="1" stop-color="#2A7FA8"/></linearGradient></defs>
+      <use href="#i-star" x="4" y="4" width="16" height="16" fill="#fff"/></svg>
+    <span class="brand">Estela</span>
+    <span class="dot" id="conn" role="status"><i></i><span>Conectando…</span></span>
+  </header>
+
+  <main>
+    <section class="view on" id="now" aria-label="Suena">
+      <div class="art">
+        <div class="glow"></div>
+        <div class="ph" id="ph"><svg width="64" height="64" aria-hidden="true"><use href="#i-star" fill="rgba(255,255,255,.5)"/></svg></div>
+        <img id="art" alt="" hidden>
+      </div>
+      <div class="meta">
+        <h1 id="title">En silencio</h1>
+        <p id="artist">Pon algo en YouTube Music.</p>
+        <div class="verse" id="verse" role="button" tabindex="0" aria-label="Ver la letra"></div>
+      </div>
+      <div class="bar">
+        <input type="range" id="seek" min="0" max="1000" value="0" aria-label="Posición de la canción">
+        <div class="times"><span id="t0">0:00</span><span id="t1">0:00</span></div>
+      </div>
+      <div class="controls">
+        <button class="small" data-c="back" aria-label="Atrás 10 segundos"><svg><use href="#i-back"/></svg></button>
+        <button data-c="prev" aria-label="Anterior"><svg><use href="#i-prev"/></svg></button>
+        <button class="play" data-c="play" aria-label="Reproducir o pausar"><svg><use id="playicon" href="#i-play"/></svg></button>
+        <button data-c="next" aria-label="Siguiente"><svg><use href="#i-next"/></svg></button>
+        <button class="small" data-c="fwd" aria-label="Adelante 10 segundos"><svg><use href="#i-fwd"/></svg></button>
+      </div>
+      <div class="vol" id="volrow" hidden>
+        <svg aria-hidden="true"><use href="#i-vol"/></svg>
+        <input type="range" id="vol" min="0" max="100" value="50" aria-label="Volumen de YouTube Music">
+      </div>
+      <div class="quick" id="quick"></div>
+    </section>
+
+    <section class="view" id="lyrics" aria-label="Letra">
+      <div id="lines" aria-live="off"></div>
+      <div class="status" id="lstatus"></div>
+    </section>
+
+    <section class="view" id="queue" aria-label="Cola">
+      <h2>A continuación</h2>
+      <div class="list" id="qlist"></div>
+    </section>
+
+    <section class="view" id="settings" aria-label="Ajustes">
+      <h2>Ajustes de Estela</h2>
+      <div id="menu"></div>
+      <p class="tip">Consejo: en el menú del navegador, «Añadir a pantalla de inicio» y Estela queda como una app.</p>
+    </section>
+    <div class="sync" id="sync" hidden>
+      <button class="chip" data-sync="1" aria-label="Retrasar la letra">− 0,25 s</button>
+      <span id="offset">±0,00 s</span>
+      <button class="chip" data-sync="0" aria-label="Adelantar la letra">+ 0,25 s</button>
+    </div>
+  </main>
+
+  <nav aria-label="Secciones">
+    <button class="on" data-v="now"><svg><use href="#i-now"/></svg>Suena</button>
+    <button data-v="lyrics"><svg><use href="#i-lyr"/></svg>Letra</button>
+    <button data-v="queue"><svg><use href="#i-queue"/></svg>Cola</button>
+    <button data-v="settings"><svg><use href="#i-set"/></svg>Ajustes</button>
+  </nav>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div>
+    <svg class="spin" width="72" height="72" aria-hidden="true"><use href="#i-star" fill="#4DA3FF"/></svg>
+    <h3 id="otitle"></h3>
+    <p id="otext"></p>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const KEY = "estela-key";
+let key = "";
+try {
+  const m = location.hash.match(/k=([A-Za-z0-9_-]+)/);
+  if (m) { localStorage.setItem(KEY, m[1]); history.replaceState(null, "", "/"); }
+  key = localStorage.getItem(KEY) || "";
+} catch (e) {
+  const m = location.hash.match(/k=([A-Za-z0-9_-]+)/);
+  key = m ? m[1] : "";
+}
+
+let S = null, at = 0, art = "", menuSig = "", linesSig = "", queueSig = "", cur = -2, view = "now";
+let seeking = false, volTouch = 0, fails = 0, userScroll = 0, pending = false;
+
+function overlay(title, text) {
+  $("overlay").hidden = !title;
+  $("otitle").textContent = title || "";
+  $("otext").textContent = text || "";
+}
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.classList.add("on");
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove("on"), 1800);
+}
+function buzz() { if (navigator.vibrate) navigator.vibrate(8); }
+function fmt(s) {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`;
+}
+function api(path, opts = {}) {
+  opts.headers = Object.assign({ "X-Estela-Key": key }, opts.headers || {});
+  opts.cache = "no-store";
+  return fetch(path, opts);
+}
+function send(name, value) {
+  buzz();
+  return api("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify({ name, value }) })
+    .then((r) => { if (r.status === 401) lost(); else setTimeout(poll, 150); })
+    .catch(() => toast("Estela no responde"));
+}
+function lost() {
+  try { localStorage.removeItem(KEY); } catch (e) {}
+  key = "";
+  overlay("Código caducado", "Vuelve a escanear el QR: en el PC, bandeja de Estela → Controlar desde el móvil…");
+}
+
+// ---- estado ----
+function pos() {
+  if (!S || !S.now) return 0;
+  const p = S.now.pos + (S.now.playing ? (performance.now() - at) / 1000 : 0);
+  return S.now.duration ? Math.min(p, S.now.duration) : p;
+}
+
+async function poll() {
+  if (pending || !key || document.hidden) return;
+  pending = true;
+  try {
+    const r = await api("/api/state");
+    if (r.status === 401) return lost();
+    if (!r.ok) throw new Error(r.status);
+    S = await r.json();
+    at = performance.now();
+    fails = 0;
+    overlay();
+    conn(true);
+    render();
+  } catch (e) {
+    if (++fails >= 3) {
+      conn(false);
+      overlay("Estela no responde", "¿Sigue abierta en el PC? Comprueba que el móvil está en el mismo Wi‑Fi. Reconectando…");
+    }
+  } finally {
+    pending = false;
+  }
+}
+function conn(ok) {
+  $("conn").classList.toggle("off", !ok);
+  $("conn").lastChild.textContent = ok ? "Conectado" : "Reconectando…";
+}
+
+function render() {
+  const n = S.now;
+  document.body.classList.toggle("paused", !n || !n.playing);
+  if (n) {
+    const root = document.documentElement.style;
+    root.setProperty("--c", n.color);
+    root.setProperty("--c2", n.palette[1] || n.palette[0] || n.color);
+    $("title").textContent = n.ad ? "Anuncio" : n.title;
+    $("artist").textContent = n.ad ? "Vuelve enseguida" : [n.artist, n.album].filter(Boolean).join(" · ");
+    $("playicon").setAttribute("href", n.playing ? "#i-pause" : "#i-play");
+    $("t1").textContent = fmt(n.duration);
+    if (n.art !== art) loadArt(n.art);
+  } else {
+    $("title").textContent = "En silencio";
+    $("artist").textContent = "Pon algo en YouTube Music.";
+    $("playicon").setAttribute("href", "#i-play");
+    if (art) loadArt("");
+  }
+  if (Date.now() - volTouch > 2500) {
+    $("volrow").hidden = S.volume == null;
+    if (S.volume != null) setRange($("vol"), S.volume, 100);
+  }
+  const sig = JSON.stringify(S.menu);
+  if (sig !== menuSig) { menuSig = sig; renderMenu(S.menu); }
+  const ls = JSON.stringify([S.lyrics.lines.length, S.lyrics.lines[0], S.lyrics.lines[S.lyrics.lines.length - 1], n && n.title]);
+  if (ls !== linesSig) { linesSig = ls; renderLines(); }
+  const qs = JSON.stringify(S.queue);
+  if (qs !== queueSig) { queueSig = qs; renderQueue(); }
+  const off = S.lyrics.offset || 0;
+  $("offset").textContent = (off >= 0 ? "+" : "−") + Math.abs(off).toFixed(2).replace(".", ",") + " s";
+}
+
+async function loadArt(id) {
+  art = id;
+  const img = $("art");
+  if (!id) { img.hidden = true; $("ph").hidden = false; return; }
+  try {
+    const r = await api("/api/cover");
+    if (!r.ok || art !== id) return;
+    const url = URL.createObjectURL(await r.blob());
+    img.classList.add("swap");
+    setTimeout(() => {
+      if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+      img.src = url;
+      img.hidden = false;
+      $("ph").hidden = true;
+      img.onload = () => img.classList.remove("swap");
+    }, img.hidden ? 0 : 220);
+  } catch (e) {}
+}
+
+function setRange(el, v, max) {
+  el.value = v;
+  el.style.setProperty("--p", (100 * v / max) + "%");
+}
+
+// ---- letra ----
+function renderLines() {
+  const box = $("lines");
+  box.textContent = "";
+  cur = -2;
+  for (const [, text] of S.lyrics.lines) {
+    const p = document.createElement("p");
+    if (text.trim()) p.textContent = text; else p.className = "gap";
+    box.appendChild(p);
+  }
+  const st = S.lyrics.lines.length ? "" : (S.now ? S.lyrics.status || "Sin letra para esta canción" : "Esperando música…");
+  $("lstatus").textContent = st;
+  $("verse").textContent = "";
+}
+function lineAt(p) {
+  const L = S.lyrics.lines;
+  let lo = 0, hi = L.length - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (L[m][0] <= p) { r = m; lo = m + 1; } else hi = m - 1; }
+  return r;
+}
+function tickLyrics() {
+  if (!S || !S.lyrics.lines.length) return;
+  const i = lineAt(pos() + (S.lyrics.offset || 0));
+  if (i === cur) return;
+  const ps = $("lines").children;
+  if (cur >= 0 && ps[cur]) ps[cur].classList.remove("cur");
+  for (let k = Math.max(0, Math.min(cur, i) - 1); k < Math.max(cur, i) + 1 && k < ps.length; k++) ps[k].classList.toggle("past", k < i);
+  cur = i;
+  const p = ps[i];
+  if (p) {
+    p.classList.add("cur");
+    if (view === "lyrics" && Date.now() - userScroll > 3500) {
+      const box = $("lyrics");
+      box.scrollTo({ top: p.offsetTop - box.clientHeight * 0.42, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }
+  }
+  $("verse").textContent = i >= 0 ? (S.lyrics.lines[i][1] || "♪") : "";
+}
+$("lyrics").addEventListener("touchmove", () => { userScroll = Date.now(); }, { passive: true });
+$("lyrics").addEventListener("wheel", () => { userScroll = Date.now(); }, { passive: true });
+
+// ---- cola ----
+function renderQueue() {
+  const box = $("qlist");
+  box.textContent = "";
+  if (!S.queue.length) {
+    const e = document.createElement("p");
+    e.className = "empty";
+    e.textContent = "La cola llega con la extensión de Chrome en YouTube Music (bandeja de Estela → Ver tu playlist).";
+    box.appendChild(e);
+    return;
+  }
+  S.queue.forEach((q, i) => {
+    const b = document.createElement("button");
+    b.className = "item" + (q.selected ? " sel" : "");
+    let pic;
+    if (q.thumb && q.thumb.startsWith("https://")) {
+      pic = document.createElement("img");
+      pic.loading = "lazy";
+      pic.alt = "";
+      pic.referrerPolicy = "no-referrer";
+      pic.src = q.thumb;
+    } else {
+      pic = document.createElement("span");
+      pic.className = "noimg";
+    }
+    const d = document.createElement("div");
+    const t = document.createElement("b");
+    t.textContent = q.title;
+    const a = document.createElement("small");
+    a.textContent = q.artist;
+    d.append(t, a);
+    b.append(pic, d);
+    if (q.selected) {
+      const eq = document.createElement("span");
+      eq.className = "eq";
+      eq.innerHTML = "<i></i><i></i><i></i>";
+      b.appendChild(eq);
+    }
+    b.setAttribute("aria-label", `Reproducir ${q.title} de ${q.artist}`);
+    b.onclick = () => { send("queue", i); toast("▶ " + q.title); };
+    box.appendChild(b);
+  });
+}
+
+// ---- ajustes: el mismo menú que la bandeja del PC ----
+function find(items, label) {
+  for (const it of items) {
+    if (it.label === label) return it;
+    if (it.items) { const f = find(it.items, label); if (f) return f; }
+  }
+  return null;
+}
+function control(it, small) {
+  const b = document.createElement("button");
+  if (it.kind === "radio") {
+    b.className = "chip" + (it.on ? " on" : "");
+    b.textContent = it.label;
+    b.setAttribute("aria-pressed", it.on);
+  } else if (it.kind === "check") {
+    b.className = "row" + (it.on ? " on" : "");
+    b.setAttribute("role", "switch");
+    b.setAttribute("aria-checked", it.on);
+    const l = document.createElement("span");
+    l.textContent = it.label;
+    const s = document.createElement("span");
+    s.className = "sw";
+    b.append(l, s);
+  } else {
+    b.className = small ? "chip" : "btn";
+    b.textContent = it.label;
+  }
+  b.onclick = () => {
+    if (it.kind === "check") { it.on = !it.on; b.classList.toggle("on", it.on); b.setAttribute("aria-checked", it.on); }
+    if (it.kind === "radio") { b.parentNode.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c === b)); }
+    send("action", it.id);
+  };
+  return b;
+}
+function renderMenu(menu) {
+  const box = $("menu");
+  const open = new Set([...box.querySelectorAll("details[open]")].map((d) => d.dataset.k));
+  box.textContent = "";
+  const general = document.createElement("div");
+  general.className = "card";
+  for (const it of menu) {
+    if (!it.items) { const c = control(it); if (it.kind === "button") c.className = "row link"; general.appendChild(c); continue; }
+    const d = document.createElement("details");
+    d.dataset.k = it.label;
+    d.open = open.has(it.label);
+    const s = document.createElement("summary");
+    const b = document.createElement("b");
+    b.textContent = it.label;
+    s.appendChild(b);
+    const sel = it.items.find((x) => x.kind === "radio" && x.on);
+    if (sel) { const sm = document.createElement("small"); sm.textContent = sel.label; s.appendChild(sm); }
+    const body = document.createElement("div");
+    body.className = "body";
+    it.items.forEach((x) => body.appendChild(control(x)));
+    d.append(s, body);
+    box.appendChild(d);
+  }
+  box.prepend(general);
+  // accesos rápidos en "Suena"
+  const q = $("quick");
+  q.textContent = "";
+  for (const label of ["Brillo en los bordes", "Mostrar letra", "Pantalla completa"]) {
+    const it = find(menu, label);
+    if (!it) continue;
+    const c = control(Object.assign({}, it, { label: label === "Brillo en los bordes" ? "Brillo" : label }), true);
+    c.className = "chip" + (it.kind === "check" && it.on ? " on" : "");
+    q.appendChild(c);
+  }
+  const sync = find(menu, "Sincronizar letra");
+  $("sync").dataset.ok = sync ? "1" : "";
+}
+document.querySelectorAll("[data-sync]").forEach((b) => b.onclick = () => {
+  const sync = S && find(S.menu, "Sincronizar letra");
+  if (sync) send("action", sync.items[Number(b.dataset.sync)].id);
+});
+
+// ---- controles ----
+document.querySelectorAll("[data-c]").forEach((b) => b.onclick = () => {
+  const c = b.dataset.c;
+  if (c === "play" && S && S.now) {
+    S.now.playing = !S.now.playing;
+    S.now.pos = pos();
+    at = performance.now();
+    $("playicon").setAttribute("href", S.now.playing ? "#i-pause" : "#i-play");
+    document.body.classList.toggle("paused", !S.now.playing);
+  }
+  send("control", c);
+});
+const seek = $("seek");
+seek.addEventListener("input", () => {
+  seeking = true;
+  seek.style.setProperty("--p", (seek.value / 10) + "%");
+  if (S && S.now) $("t0").textContent = fmt(seek.value / 1000 * S.now.duration);
+});
+seek.addEventListener("change", () => {
+  if (S && S.now && S.now.duration) {
+    const t = seek.value / 1000 * S.now.duration;
+    S.now.pos = t;
+    at = performance.now();
+    send("seek", t);
+  }
+  seeking = false;
+});
+const vol = $("vol");
+let volT = 0;
+vol.addEventListener("input", () => {
+  volTouch = Date.now();
+  setRange(vol, vol.value, 100);
+  clearTimeout(volT);
+  volT = setTimeout(() => send("volume", Number(vol.value)), 120);
+});
+$("verse").onclick = () => go("lyrics");
+
+// ---- vistas ----
+function go(v) {
+  view = v;
+  document.querySelectorAll(".view").forEach((s) => s.classList.toggle("on", s.id === v));
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
+  $("sync").hidden = !(v === "lyrics" && $("sync").dataset.ok);
+  if (v === "lyrics") { cur = -2; userScroll = 0; }
+}
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => { buzz(); go(b.dataset.v); });
+
+// ---- cielo: estrellas que titilan, unidas por líneas finas (la constelación de Estela) ----
+const sky = $("sky"), g = sky.getContext("2d");
+let stars = [];
+function makeSky() {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  sky.width = innerWidth * dpr;
+  sky.height = innerHeight * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  stars = Array.from({ length: 46 }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight,
+    r: Math.random() * 1.2 + .3, p: Math.random() * 6.3, s: Math.random() * .8 + .4 }));
+}
+function drawSky(t) {
+  g.clearRect(0, 0, innerWidth, innerHeight);
+  g.strokeStyle = "rgba(160,200,255,.07)";
+  g.lineWidth = 1;
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i + 1; j < stars.length; j++) {
+      const a = stars[i], b = stars[j];
+      if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) < 90) { g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); }
+    }
+  }
+  for (const s of stars) {
+    g.globalAlpha = .35 + .45 * (.5 + .5 * Math.sin(t / 1000 * s.s + s.p));
+    g.fillStyle = "#fff";
+    g.beginPath(); g.arc(s.x, s.y, s.r, 0, 6.3); g.fill();
+  }
+  g.globalAlpha = 1;
+}
+makeSky();
+addEventListener("resize", makeSky);
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+let last = 0;
+function frame(t) {
+  requestAnimationFrame(frame);
+  if (document.hidden) return;
+  if (S && S.now && !seeking) {
+    const p = pos();
+    $("t0").textContent = fmt(p);
+    if (S.now.duration) setRange(seek, Math.round(1000 * p / S.now.duration), 1000);
+  }
+  tickLyrics();
+  if (!still && t - last > 50) { last = t; drawSky(t); }  // 20 fps bastan para titilar
+}
+if (still) drawSky(0);
+requestAnimationFrame(frame);
+
+if (!key) overlay("Escanea el QR", "En el PC: bandeja de Estela → Controlar desde el móvil… y escanea el código con la cámara.");
+else { overlay("Conectando con Estela…", ""); poll(); }
+setInterval(poll, 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+</script>
+</body>
+</html>

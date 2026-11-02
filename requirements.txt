@@ -1,6 +1,7 @@
 PySide6-Essentials==6.12.0
 PySide6-WebEngine==6.12.0.140  # YouTube Music integrado (trae PySide6-Addons)
 Pillow==13.0.0
+segno==1.6.6  # QR del mando en el móvil
 truststore==0.10.5  # HTTPS con los certificados de Windows (raíces nuevas como el navegador)
 winrt-runtime==4.0.3
 winrt-Windows.Foundation==4!10.0.28000.2705

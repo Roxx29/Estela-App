@@ -22,6 +22,9 @@ class TestBridge(unittest.TestCase):
         self.assertIsNone(bridge.clean([1, 2]))
         self.assertEqual(bridge.clean({"lyrics": 5})["lyrics"], "")
         self.assertEqual(len(bridge.clean({"lyrics": "x" * 99999})["lyrics"]), bridge.MAX_LYRICS)
+        self.assertEqual(bridge.clean({"volume": 42})["volume"], 42)
+        for bad in (101, -1, True, "50", None):
+            self.assertIsNone(bridge.clean({"volume": bad})["volume"])
 
     def test_servidor(self):
         app = QCoreApplication.instance() or QCoreApplication([])  # noqa: F841

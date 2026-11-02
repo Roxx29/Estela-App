@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Estela: tu cola de YouTube Music",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Envía a Estela (en este PC) la cola de YouTube Music para verla en su carrusel y reproducir desde ahí.",
   "host_permissions": [
     "http://127.0.0.1:38917/*"
@@ -17,6 +17,15 @@
       "js": [
         "content.js"
       ]
+    },
+    {
+      "matches": [
+        "https://music.youtube.com/*"
+      ],
+      "js": [
+        "page.js"
+      ],
+      "world": "MAIN"
     }
   ],
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuEWDsvNXUEuOHOHCAMKhuoHduFjmaOVGr9qk9psN+0c5LkLqxtjw7+hV+PKxPH2JQA4bHj1RrNJbaafmqGen0qF4ofkj6jvktjew9hazWxPK7U09brSl0beF7oTc7m5m4ohxH0W3zrX00tyZGWKbPV5XrERlpVmMOhAU5o/9TqL6qa7M1Px0kIHZXELFCWtTRkN626DpirXyAtGvs5yXz+6sjuCEzafTwRmS65nVQ7vlk8k0DN2QnfxAtgnyA58iGjc9Jg4vPQ7W2aq8cxbj1QSLxkSVLy+LlCsG6XOJ4AZ/mEuI2efRba7pUV3C9989FhCvUm/ZvUcU3tBiA/yT4QIDAQAB"

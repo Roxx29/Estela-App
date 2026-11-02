@@ -68,7 +68,7 @@ Hecha la B en la v14. A y C quedan como ideas.
 
 ## 2026-11-02 (controlar Estela desde el móvil)
 
-14. **Mando en el móvil** (Gestor de ideas, Marketing; sin decidir):
+14. **Mando en el móvil** (Gestor de ideas, Marketing). Hecha la A el 2026-11-02, con volumen de YouTube Music y todos los ajustes:
     - **A. Página web servida por Estela en el Wi‑Fi de casa** (recomendada): bandeja → «Controlar desde el móvil…» (apagado de serie) muestra un QR; el móvil abre una página sin instalar nada (se puede añadir a la pantalla de inicio). Play/pausa, anterior/siguiente, ±10 s, portada con el halo de su color, letra en 3 líneas, estilo de letra y de brillo, apagar brillo, ocultar letra, desfase de la letra, cola. Servidor aparte del puente de la extensión, con código secreto en el QR; solo red local. Windows pide permiso al firewall la primera vez (marcar «Redes privadas»); no va en redes de invitados, de universidad ni con VPN. Esfuerzo medio (~200 líneas + una página; `segno` para el QR).
     - **B. KDE Connect o Unified Remote** (sin código): app en el móvil y en el PC; solo play/pausa, siguiente y volumen de Windows, nada propio de Estela.
     - **C. PWA con HTTPS**: descartada (certificado autofirmado = avisos en el móvil).
