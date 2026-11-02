@@ -12,6 +12,9 @@ Resultado final: una App ejecutable (.exe).
 3. **Todo pasa por todos los agentes.** Cada tarea la revisan todos los agentes, discuten ideas entre ellos y el Capitán decide. Ver el flujo abajo.
 4. **Builds:** nunca ejecutar el build por el usuario. Dejar un archivo listo para que él lo ejecute (por ejemplo `build.bat`) que genere el `.exe`.
 
+## Indicaciones generales
+Leer y cumplir siempre: @.claude/indicaciones/generales.md
+
 ## Agentes
 | Agente | Archivo | Rol |
 |---|---|---|
