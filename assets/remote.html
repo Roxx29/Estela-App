@@ -178,6 +178,7 @@ nav button.on::before { content: ""; position: absolute; top: -2px; width: 22px;
 .overlay[hidden] { display: none; }
 .overlay h3 { color: var(--white); font-size: 22px; margin: 18px 0 8px; }
 .overlay p { color: var(--dim); margin: 0 auto; max-width: 320px; }
+.overlay .chip { margin-top: 22px; }
 .spin { animation: spin 6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .toast { position: fixed; left: 50%; bottom: calc(var(--bottom) + 84px); z-index: 30; transform: translate(-50%, 20px); opacity: 0;
@@ -285,6 +286,7 @@ nav button.on::before { content: ""; position: absolute; top: -2px; width: 22px;
     <svg class="spin" width="72" height="72" aria-hidden="true"><use href="#i-star" fill="#4DA3FF"/></svg>
     <h3 id="otitle"></h3>
     <p id="otext"></p>
+    <button class="chip" id="rescan" hidden>Escanear el QR</button>
   </div>
 </div>
 <div class="toast" id="toast" role="status"></div>
@@ -308,6 +310,8 @@ let seeking = false, volTouch = 0, fails = 0, userScroll = 0, pending = false;
 
 function overlay(title, text) {
   $("overlay").hidden = !title;
+  // en la app Estela Mando: volver a escanear sin salir (código caducado, PC distinto)
+  $("rescan").hidden = !(window.EstelaApp && title && !key);
   $("otitle").textContent = title || "";
   $("otext").textContent = text || "";
 }
@@ -629,6 +633,7 @@ vol.addEventListener("input", () => {
   volT = setTimeout(() => send("volume", Number(vol.value)), 120);
 });
 $("verse").onclick = () => go("lyrics");
+$("rescan").onclick = () => window.EstelaApp && window.EstelaApp.rescan();
 
 // ---- vistas ----
 function go(v) {

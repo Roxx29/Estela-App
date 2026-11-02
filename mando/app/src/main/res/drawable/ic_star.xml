@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo de Estela: estrella de 4 puntas dentro de un aro azul estrella → cian -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeWidth="3.5" android:fillColor="#00000000"
+        android:pathData="M54,32 a22,22 0 1,1 0,44 a22,22 0 1,1 0,-44Z">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="54" android:startY="32" android:endX="54" android:endY="76"
+                android:startColor="#FF4DA3FF" android:endColor="#FF2A7FA8" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M54,38 L57.6,50.4 L70,54 L57.6,57.6 L54,70 L50.4,57.6 L38,54 L50.4,50.4Z" />
+</vector>

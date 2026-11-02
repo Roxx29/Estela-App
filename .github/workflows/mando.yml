@@ -1,0 +1,37 @@
+# Genera la APK de Estela Mando y la publica como Release (descarga directa desde el móvil).
+name: APK Estela Mando
+
+on:
+  push:
+    paths: ["mando/**", ".github/workflows/mando.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mando
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew && ./gradlew testReleaseUnitTest assembleRelease
+      - run: cp app/build/outputs/apk/release/app-release.apk EstelaMando.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mando-${{ github.run_number }}
+          name: Estela Mando ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            App del móvil para controlar Estela en el PC.
+            1. Descarga **EstelaMando.apk** en el móvil y ábrela (permite instalar apps de este origen si lo pide).
+            2. En el PC: bandeja de Estela → Controlar desde el móvil… y escanea el QR desde la app.
+          files: mando/EstelaMando.apk

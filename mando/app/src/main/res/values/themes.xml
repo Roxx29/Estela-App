@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fondo noche desde el primer frame, sin destello blanco al abrir -->
+    <style name="Mando" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/night</item>
+        <item name="android:statusBarColor">@color/night</item>
+        <item name="android:navigationBarColor">@color/night</item>
+        <item name="android:colorAccent">@color/star</item>
+    </style>
+    <color name="night">#FF0A1430</color>
+    <color name="star">#FF4DA3FF</color>
+</resources>
