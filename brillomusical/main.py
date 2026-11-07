@@ -21,7 +21,9 @@ from .media import MediaWatcher
 from .room_ui import RoomPanel
 from .vsync import FrameClock
 
-DATA = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BrilloMusical")
+APPDATA = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+DATA = os.path.join(APPDATA, "Estela")
+OLD_DATA = os.path.join(APPDATA, "BrilloMusical")  # nombre anterior: se migra al arrancar
 DEBOUNCE_MS = 400  # cambio rápido de canción: esperar antes de pedir la letra
 RETRIES_S = (5, 15, 45)  # sin internet
 PAUSED = 0.4
@@ -52,7 +54,7 @@ class Controller(QObject):
 
     def __init__(self, app):
         super().__init__()
-        self.settings = QSettings("BrilloMusical", "BrilloMusical")
+        self.settings = QSettings("Estela", "Estela")
         self.frames = FrameClock()  # fotogramas al ritmo de la pantalla para el borde y la letra
         app.aboutToQuit.connect(self.frames.stop)
         self.glow = Glow(self.frames)
@@ -76,9 +78,9 @@ class Controller(QObject):
         self.debounce = QTimer(self, singleShot=True, interval=DEBOUNCE_MS, timeout=self._fetch)
         self.watcher = MediaWatcher()
         self.watcher.snapshot.connect(self._on_snapshot)
-        app.aboutToQuit.connect(self.watcher.stop)
         self.room = RoomPanel(self.window, self.settings, self.watcher)
-        app.aboutToQuit.connect(lambda: self.room.leave(quiet=True))
+        app.aboutToQuit.connect(lambda: self.room.leave(quiet=True))  # antes de parar SMTC: deja la velocidad a 1
+        app.aboutToQuit.connect(self.watcher.stop)
         # modo del borde: "auto" decide por canción; uno fijado a mano gana siempre
         self.manual = self.settings.value("glow_mode", "auto")
         self.line_pulse = self.settings.value("line_pulse", True, type=bool)
@@ -169,9 +171,9 @@ class Controller(QObject):
         menu.addAction("Escuchar juntos…", self._open_room)
         menu.addAction("Atajos de teclado",
                        lambda: self.tray.showMessage("Atajos en la ventana de la letra", constellation.HELP))
-        menu.addAction("Salir de BrilloMusical", self._quit)
+        menu.addAction("Salir de Estela", self._quit)
         self.tray = QSystemTrayIcon(QIcon(resource("icon.ico")), app)
-        self.tray.setToolTip("BrilloMusical")
+        self.tray.setToolTip("Estela")
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(lambda r: r == QSystemTrayIcon.DoubleClick and self._open())
         self.tray.show()
@@ -385,7 +387,7 @@ class Controller(QObject):
             self.glow_pending = True
             self.window.set_mood("normal")  # sin medidor (reserva) no se queda el ambiente de la anterior
             self._apply_mode()
-            self.tray.setToolTip(f"BrilloMusical — {snap['title']} · {snap['artist']}"[:127])
+            self.tray.setToolTip(f"Estela — {snap['title']} · {snap['artist']}"[:127])
             self.window.set_offset(self.offsets.get(self._offset_key()))
             self.window.set_lyrics(SEARCHING, [])
             self.debounce.start()  # también pide la portada grande: así no se dispara con cada salto rápido
@@ -409,7 +411,9 @@ class Controller(QObject):
 
         def work():
             try:
-                lines = lyrics.fetch(snap["title"], snap["artist"], snap["album"], snap["duration"])
+                # LRCLIB sale en cuanto llega; las letras mejores las aplica la ventana en la siguiente estrofa
+                lines = lyrics.fetch_lines(snap["title"], snap["artist"], snap["album"], snap["duration"],
+                                           lambda found, _source: self.lyrics_ready.emit(key, "", found))
                 self.lyrics_ready.emit(key, NO_LYRICS if not lines else "", lines)
             except Exception as e:
                 log.warning("Letra no disponible: %s", e)
@@ -425,12 +429,30 @@ class Controller(QObject):
                 QTimer.singleShot(RETRIES_S[self.retry] * 1000, lambda: key == self.track and self._fetch())
                 self.retry += 1
             lines = []
-        self.window.set_lyrics(status, lines)
+        if lines:
+            self.window.update_lyrics(lines)  # señal Qt: llega al hilo principal
+        else:
+            self.window.set_lyrics(status, lines)
+
+
+def migrate():
+    """BrilloMusical → Estela: mueve la carpeta de caché y copia los ajustes para no perderlos."""
+    if os.path.isdir(OLD_DATA) and not os.path.exists(DATA):
+        try:
+            os.rename(OLD_DATA, DATA)
+        except OSError:
+            pass  # otra copia abierta o sin permisos: se empieza con caché nueva
+    old, new = QSettings("BrilloMusical", "BrilloMusical"), QSettings("Estela", "Estela")
+    if old.allKeys() and not new.allKeys():
+        for k in old.allKeys():
+            new.setValue(k, old.value(k))
+        new.sync()
 
 
 def main():
+    migrate()
     os.makedirs(DATA, exist_ok=True)
-    debug = os.environ.get("BRILLOMUSICAL_DEBUG") == "1"  # anclas de SMTC y origen de la letra en el log
+    debug = os.environ.get("ESTELA_DEBUG") == "1"  # anclas de SMTC y origen de la letra en el log
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=[logging.handlers.RotatingFileHandler(os.path.join(DATA, "app.log"), maxBytes=2_000_000 if debug
@@ -439,7 +461,7 @@ def main():
     sys.excepthook = lambda *exc: log.critical("Error no controlado", exc_info=exc)
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("BrilloMusical")
+    app.setApplicationName("Estela")
     app.setWindowIcon(QIcon(resource("icon.ico")))
     lock = QLockFile(os.path.join(DATA, "app.lock"))
     if not lock.tryLock(100):

@@ -19,7 +19,7 @@ from . import lyrics
 
 API = "https://itunes.apple.com/search"
 DEEZER = "https://api.deezer.com/search"
-CACHE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BrilloMusical", "art")
+CACHE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Estela", "art")
 MISS_TTL = 24 * 3600
 MAX_BYTES = 5_000_000  # lo que venga de la red, con tope
 MAX_FILES = 500
@@ -63,7 +63,7 @@ def pick_deezer(data, title, artist, duration):
 
 
 def _get(url, timeout=6):
-    req = urllib.request.Request(url, headers={"User-Agent": "BrilloMusical/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Estela/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read(MAX_BYTES)
 
