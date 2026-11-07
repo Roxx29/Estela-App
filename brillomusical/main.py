@@ -13,12 +13,13 @@ from PySide6.QtCore import QBuffer, QCoreApplication, QLockFile, QObject, QSetti
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import (artwork, audio, backdrop, beat, bridge, color, cover, history, intro, kinetic, lyrics, nyc, quality, remote,
-               transitions, ytm)
+from . import (artwork, audio, backdrop, beat, bridge, color, constellation, cover, history, intro, kinetic, lyrics, nyc,
+               quality, remote, transitions, ytm)
 from .color import FALLBACK
-from .constellation import HELP, SEARCHING, LyricsWindow
+from .constellation import SEARCHING, LyricsWindow
 from .glow import Glow
 from .media import MediaWatcher, position
+from .room_ui import RoomPanel
 from .vsync import FrameClock
 
 # la app se llama Estela; la carpeta de datos y los ajustes conservan el nombre antiguo para no perder nada
@@ -37,6 +38,9 @@ BG_EVERY = 20.0  # el fondo automático, como mucho cada 20 s
 NO_LYRICS, OFFLINE = "Sin letra para esta canción", "Sin conexión · reintentando…"
 
 log = logging.getLogger("brillomusical")
+# J abre Escuchar juntos (la tecla H lee constellation.HELP al pulsarla)
+if "J " not in constellation.HELP:
+    constellation.HELP += " · J escuchar juntos"
 
 
 def _png(img):
@@ -110,6 +114,8 @@ class Controller(QObject):
         self.window.control.connect(self._control)
         self.genre_ready.connect(self._on_genre)
         self.seek = (None, 0.0)  # (destino, hora) del último ±10 s: dos seguidos suman aunque SMTC no haya respondido
+        self.room = RoomPanel(self.window, self.settings, self.watcher)
+        app.aboutToQuit.connect(lambda: self.room.leave(quiet=True))  # antes de parar SMTC: deja la velocidad a 1
         app.aboutToQuit.connect(self.watcher.stop)
         # modo del borde: "auto" decide por canción; uno fijado a mano gana siempre
         self.manual = self.settings.value("glow_mode", "auto")
@@ -226,6 +232,7 @@ class Controller(QObject):
                        checked=self.settings.value("intro_enabled", True, type=bool))
         anim.toggled.connect(lambda on: self.settings.setValue("intro_enabled", on))
         menu.addAction(anim)
+        local.append(menu.addAction("Escuchar juntos…", self._open_room))
         local.append(menu.addAction("Atajos de teclado",
                                     lambda: self.tray.showMessage("Atajos en la ventana de la letra", HELP)))
         local.append(menu.addAction("Salir de Estela", self._quit))
@@ -654,6 +661,10 @@ class Controller(QObject):
         self.window.raise_()
         self.window.activateWindow()
 
+    def _open_room(self):
+        self._open()
+        self.room.open()
+
     def _quit(self):
         if self.window.isVisible():
             self.window.close()  # guarda la posición
@@ -662,6 +673,10 @@ class Controller(QObject):
         QApplication.quit()
 
     def _on_snapshot(self, snap):
+        self._on_track_snapshot(snap)
+        self.room.on_snapshot(snap)  # después: el invitado compara con la foto ya aplicada
+
+    def _on_track_snapshot(self, snap):
         if snap and (snap["title"], snap["artist"], snap["album"]) != self.track:
             self.audio_fails = 0  # p. ej. cambiaron los auriculares: se vuelve a intentar
         self._update_audio(snap)
@@ -709,7 +724,9 @@ class Controller(QObject):
 
         def work():
             try:
-                lines = lyrics.fetch(snap["title"], snap["artist"], snap["album"], snap["duration"])
+                # LRCLIB sale en cuanto llega; las letras mejores las aplica la ventana en la siguiente estrofa
+                lines = lyrics.fetch_lines(snap["title"], snap["artist"], snap["album"], snap["duration"],
+                                           lambda found, _source: self.lyrics_ready.emit(key, "", found))
                 self.lyrics_ready.emit(key, NO_LYRICS if not lines else "", lines)
             except Exception as e:
                 log.warning("Letra no disponible: %r", e, exc_info=not isinstance(e, OSError))
@@ -733,12 +750,14 @@ class Controller(QObject):
             self.no_lyrics = key  # si luego llega la de YouTube Music, se usa
             if self._use_page_lyrics():
                 return
-        self.window.set_lyrics(status, lines)
+            self.window.set_lyrics(status, lines)
+        else:
+            self.window.update_lyrics(lines)  # la primera se pone ya; una mejor, al empezar la siguiente estrofa
 
 
 def main():
     os.makedirs(DATA, exist_ok=True)
-    debug = os.environ.get("BRILLOMUSICAL_DEBUG") == "1"  # anclas de SMTC y origen de la letra en el log
+    debug = "1" in (os.environ.get("ESTELA_DEBUG"), os.environ.get("BRILLOMUSICAL_DEBUG"))  # anclas de SMTC y origen de la letra en el log
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=[logging.handlers.RotatingFileHandler(os.path.join(DATA, "app.log"), maxBytes=2_000_000 if debug

@@ -1,9 +1,11 @@
+import os
 import json
 import unittest
 import urllib.error
 import urllib.request
 
-from PySide6.QtCore import QCoreApplication
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6.QtWidgets import QApplication  # una sola app para toda la suite: otros tests crean widgets
 
 from brillomusical import bridge
 
@@ -27,7 +29,7 @@ class TestBridge(unittest.TestCase):
             self.assertIsNone(bridge.clean({"volume": bad})["volume"])
 
     def test_servidor(self):
-        app = QCoreApplication.instance() or QCoreApplication([])  # noqa: F841
+        app = QApplication.instance() or QApplication([])  # noqa: F841
         b = bridge.Bridge()
         if b.server is None:
             self.skipTest("puerto ocupado")

@@ -92,5 +92,32 @@ class TestColor(unittest.TestCase):
         self.assertAlmostEqual(color.from_bytes(buf.getvalue())[1], 160 / 90)
 
 
+class TestDuet(unittest.TestCase):
+    dark = (20, 10, 10)
+
+    def hue_deg(self, rgb):
+        return hsv(rgb)[0] * 360
+
+    def test_segundo_de_la_paleta_si_es_distinto(self):
+        v2 = color.duet([(230, 40, 40), (40, 90, 240)], self.dark)
+        self.assertAlmostEqual(self.hue_deg(v2), self.hue_deg((40, 90, 240)), delta=3)
+        self.assertGreaterEqual(color.contrast(v2, self.dark), 4.5)
+
+    def test_sin_segundo_color_gira_150(self):
+        v2 = color.duet([(230, 40, 40)], self.dark)
+        self.assertAlmostEqual(self.hue_deg(v2), 150, delta=4)
+        self.assertGreaterEqual(color.contrast(v2, self.dark), 4.5)
+
+    def test_parecido_no_vale_y_se_aclara_hasta_el_contraste(self):
+        dark = (30, 30, 120)  # fondo azul: un azul oscuro no se leería
+        v2 = color.duet([(230, 40, 40), (240, 80, 40)], dark)  # 2.º color a <60°: se gira
+        self.assertGreaterEqual(color.contrast(v2, dark), 4.5)
+        self.assertEqual(color.duet([(255, 255, 0)], (250, 250, 250)), (255, 255, 255))  # imposible: blanco
+
+    def test_contraste_wcag(self):
+        self.assertAlmostEqual(color.contrast((255, 255, 255), (0, 0, 0)), 21, places=3)
+        self.assertEqual(color.mix((0, 0, 0), (255, 255, 255), 0.5), (128, 128, 128))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -82,3 +82,39 @@ def from_bytes(data):
     """Devuelve (paleta, ancho/alto) de una imagen en bytes."""
     img = Image.open(io.BytesIO(data))
     return palette(img), img.width / img.height
+
+
+def mix(a, b, f):
+    """a → b en proporción f (0 = a, 1 = b)."""
+    return tuple(round(x + (y - x) * f) for x, y in zip(a, b))
+
+
+def _lum(rgb):
+    lin = [(c / 255) / 12.92 if c <= 10 else ((c / 255 + 0.055) / 1.055) ** 2.4 for c in rgb]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def contrast(a, b):
+    """Contraste WCAG entre dos colores (1..21)."""
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _hue(rgb):
+    return colorsys.rgb_to_hsv(*(c / 255 for c in rgb))[0]
+
+
+def duet(pal, bg, min_contrast=4.5):
+    """Color de la 2.ª voz (v2), una vez por canción: el 2.º de la paleta si su tono difiere ≥60° del 1.º,
+    si no el 1.º girado +150°; se aclara hacia el blanco hasta tener contraste ≥ 4,5:1 sobre `bg`."""
+    v1 = pal[0] if pal else FALLBACK
+    h1 = _hue(v1)
+    v2 = next((c for c in pal[1:2] if min(abs(_hue(c) - h1), 1 - abs(_hue(c) - h1)) >= DISTINCT_HUE), None)
+    if v2 is None:
+        _, s, v = colorsys.rgb_to_hsv(*(c / 255 for c in v1))
+        v2 = _tune((h1 + 150 / 360) % 1, s, v)
+    for k in range(11):
+        c = mix(v2, (255, 255, 255), k / 10)
+        if contrast(c, bg) >= min_contrast:
+            return c
+    return 255, 255, 255  # ponytail: fondo demasiado claro, el blanco es lo máximo que se puede dar

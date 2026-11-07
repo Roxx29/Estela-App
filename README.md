@@ -20,6 +20,7 @@ Estela pinta los bordes de tu pantalla con los colores de la portada de lo que s
   - **Loco (cambia con la música)**: salta entre Constelación, Latido, Cinta y Nueva York siguiendo la canción: siempre en las subidas fuertes y al empezar un estribillo, y además en cada estrofa si la canción es intensa, cada 2 si es normal y cada 3 si es tranquila (nunca antes de 8 s). Cada cambio es una transición de formas: iris que se convierte en estrella y hexágono, cristal roto, mancha líquida, remolino, persiana inclinada, mosaico de píxeles, onda de choque, cizalla, puerta que se abre y glitch; cuál toca depende del momento (onda, cristal o glitch en los drops; iris, remolino o puerta en los estribillos…). En calidad Ligera, un zoom con fundido.
   - **Latido**: fondo liso del color de la portada que se ilumina con cada golpe, con anillos que salen del centro al ritmo (tres seguidos en las subidas fuertes). La línea que suena va blanca, gigante y en mayúsculas abajo a la izquierda, y la palabra actual crece con el golpe. Los efectos cambian con el ambiente: en las canciones tranquilas la letra sube suave o se rellena tipo karaoke; en las normales, las palabras golpean o se mecen; en las intensas, la letra cae en cascada o entra con impacto.
   - **Nueva York**: blanco y negro, como un cartel de la ciudad. Las palabras se enganchan a la derecha, debajo o en vertical sobre una sola placa negra, en tres tamaños: las cortas pequeñas, las demás medianas y la última de cada línea, la protagonista, enorme. Cada palabra entra como un sello, la que suena se rellena de gris a blanco y la placa late con el golpe. La cámara se acerca despacio y, al terminar cada línea, atraviesa la placa hacia la siguiente. En los estribillos el borde se enciende como un neón del color de línea de metro más parecido a la portada; en las subidas fuertes la pantalla se invierte y tiembla. Al empezar, el título entra como en los créditos de cine, con las letras juntándose; al abrir cada bloque, líneas finas lo encuadran como en los títulos de Saul Bass; detrás queda el bloque anterior, enorme y casi transparente, y en las canciones tranquilas cae una lluvia fina. Abajo, una banda de estación de metro con la inicial del artista, el título y el verso siguiente. Tres fondos (tecla **B**): Asfalto y Portada en blanco y negro, con rascacielos cuyas ventanas se encienden con los golpes, y Ciudad, un plano de Manhattan con coches que circulan.
+- **Letras con más fuentes**: LRCLIB más BetterLyrics, BiniLyrics, LrcRed y YouLy+. Si alguna trae la letra palabra a palabra, se usa al empezar la siguiente estrofa, con coros como estrellas pequeñas y dúos con un color por cantante.
 - **Portada de fondo**: difuminada, en movimiento, con efecto Ken Burns o al ritmo. La portada HD sale de iTunes y Deezer.
 - **Carátula**: una tarjeta con título, artista y progreso. Si la canción no tiene letra, o llega un instrumental largo, la carátula se mueve al centro en grande.
 - **Pantalla completa** para dejar la letra puesta en una tele o en un segundo monitor.
@@ -56,6 +57,7 @@ Estela pinta los bordes de tu pantalla con los colores de la portada de lo que s
 | **C** | Cambiar la posición de la carátula |
 | **T** | Cambiar la transición |
 | **← / →** | Retrasar o adelantar la letra 0,1 s (se recuerda en cada canción) |
+| **J** | Escuchar juntos (sala con amigos) |
 | **H** | Ver los atajos |
 
 ## Equipos modestos
@@ -66,6 +68,34 @@ En *Calidad*, el modo **Automática** mide lo que le cuesta a tu equipo mover la
 
 - Windows 10 u 11.
 - Cualquier app que muestre lo que suena en los controles multimedia de Windows: YouTube Music en el navegador, Spotify, Apple Music, Deezer, Tidal, VLC… El ritmo se lee del navegador o de esos reproductores.
+
+## Descarga
+
+- **Versión publicada**: en *Releases* del repositorio, descarga `Estela-vX.Y.Z.zip`.
+- **Última compilación**: en *Actions → Build*, abre la ejecución más reciente y descarga el artefacto `Estela-windows` (se guarda 30 días; hace falta haber iniciado sesión en GitHub).
+
+**Aviso de Windows SmartScreen.** El `.exe` no está firmado (un certificado de firma cuesta dinero), así que la primera vez Windows puede decir *"Windows protegió tu PC"*. Pulsa **Más información → Ejecutar de todas formas**. Descárgalo solo desde este repositorio; si prefieres no fiarte, genera tú el `.exe` con `build.bat` (ver abajo).
+
+
+## Escuchar juntos
+
+Escucha la misma canción a la vez que tus amigos, cada uno en su ordenador y con su propia cuenta de YouTube Music. El anfitrión manda: cuando cambia de canción, pausa o salta, los demás le siguen. Hay chat y se pueden sugerir canciones.
+
+**Prepararlo (una vez, solo el anfitrión).** Estela no usa un servidor central: cada anfitrión publica el suyo, gratis, en Cloudflare.
+1. Instala [Node.js](https://nodejs.org) 20 o superior y crea una cuenta gratuita de Cloudflare.
+2. Descarga el código del repositorio y ejecuta `deploy_servidor.bat`. Abre el navegador para iniciar sesión en Cloudflare y al final muestra la dirección del servidor (`wss://…/ws`).
+3. En Estela pulsa **J** y pega esa dirección.
+
+**Invitar.** Pulsa **J → Crear sala → Copiar invitación** y mándala por donde quieras. Tu amigo pulsa **J**, pega la invitación y tú apruebas su entrada. Máximo 10 personas por sala.
+
+**Limitaciones.**
+- Cada uno necesita YouTube Music (con Premium: los anuncios rompen la sincronía) y Estela abierta.
+- El invitado abre la canción con la primera coincidencia de búsqueda: puede salir otra versión, o ninguna si no está en su país.
+- La sincronía ronda el segundo, no es exacta: los desfases pequeños se corrigen poco a poco y los grandes con un salto.
+- Si el navegador no deja saltar desde los controles multimedia de Windows, Estela avisa y hay que ajustar a mano.
+- El servidor gratuito tiene los límites del plan gratuito de Cloudflare.
+
+**Privacidad.** El servidor es tuyo: solo pasan por él el título, el artista y la posición de la canción, los nombres que elijáis y el chat. La sala se borra 10 minutos después de quedarse vacía y no se guarda historial. Nadie entra sin tu aprobación.
 
 ## Privacidad
 
@@ -83,8 +113,8 @@ Estela lee la canción que suena desde los controles multimedia de Windows. Para
 
 ## Para desarrolladores
 
-Con Python 3.12 instalado, haz doble clic en `build.bat`. El script instala las dependencias, pasa los tests y deja el programa en `dist\Estela\Estela.exe`. Si abres la app con la variable `BRILLOMUSICAL_DEBUG=1`, guarda un registro detallado en `app.log`.
+Cada cambio en `main` se compila solo en GitHub Actions y cada etiqueta `v*` publica una Release con el `.zip`. Para hacerlo en tu PC: con Python 3.12 instalado, haz doble clic en `build.bat`. Instala las dependencias, pasa los tests y deja el programa en `dist\Estela\Estela.exe`.
 
 ## Créditos
 
-Letras: [LRCLIB](https://lrclib.net). Portadas: iTunes Search API y Deezer API. Iconos: Segoe MDL2 Assets de Windows. Hecho con Python y PySide6.
+Letras: [LRCLIB](https://lrclib.net), BetterLyrics, BiniLyrics, LrcRed y YouLy+. Portadas: iTunes Search API y Deezer API. Iconos: Segoe MDL2 Assets de Windows. Hecho con Python y PySide6.

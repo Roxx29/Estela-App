@@ -1,4 +1,4 @@
-"""Letras sincronizadas: limpieza de títulos, LRCLIB, caché y tiempos por palabra (sin Qt)."""
+"""Letras sincronizadas: limpieza de títulos, proveedores en paralelo, caché y tiempos por palabra (sin Qt)."""
 import bisect
 import hashlib
 import json
@@ -6,13 +6,16 @@ import logging
 import os
 import re
 import ssl
+import queue
+import threading
 import time
 import urllib.error
-import urllib.parse
-import urllib.request
+
+from . import providers, ttml
 
 API = "https://lrclib.net/api/"
-CACHE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BrilloMusical", "lyrics")
+CACHE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Estela", "lyrics2")  # caché v2
+TOTAL_S = 8.0  # espera máxima a todos los proveedores
 MISS_TTL = 24 * 3600  # "sin letra" se vuelve a buscar al día siguiente
 
 _JUNK = re.compile(
@@ -139,29 +142,55 @@ def words(text):
 
 
 def word_times(lines, idx):
-    """Inicio de cada palabra: exacto si la letra trae <mm:ss.xx>, si no estimado por longitud."""
+    """Inicio de cada palabra: exacto si la letra trae tiempos (<mm:ss.xx> o TimedText), si no estimado."""
     start, text = lines[idx]
+    if getattr(text, "times", None):
+        return list(text.times)
     tagged = _tagged(text)
     if tagged:
         return [t for t, _ in tagged]
-    clean_words = text.split()
     end = lines[idx + 1][0] if idx + 1 < len(lines) else start + 6
-    # una nota larga al final no debe retrasar las palabras: ~0,5 s por palabra como mucho
-    span = min(end - start, 0.5 * len(clean_words) + 0.5, 6)
-    weights = [len(w) + 2 for w in clean_words]
-    total, acc, out = sum(weights), 0, []
-    for w in weights:
-        out.append(start + span * acc / total)
-        acc += w
+    return [w[0] for w in ttml.spread(start, end, text.split())]
+
+
+# --- Modelo único de línea: {"t", "end", "agent", "words": [(t, end, texto, bg)]}; words=[] = fin de estrofa ---
+
+class TimedText(str):
+    """Texto de una línea con los tiempos exactos de sus palabras (capa compatible con (t, texto))."""
+    times = ()
+
+
+def legacy(lines):
+    """Modelo → [(t, texto)] de la API anterior, sin perder los tiempos por palabra."""
+    out = []
+    for line in lines:
+        text = TimedText(" ".join(w[2] for w in line["words"]))
+        text.times = tuple(w[0] for w in line["words"])
+        out.append((line["t"], text))
+    return out
+
+
+def from_lrc(pairs):
+    """[(t, texto)] de parse_lrc → modelo. Las líneas vacías se conservan (marcan fin de estrofa)."""
+    out = []
+    for i, (t, text) in enumerate(pairs):
+        end = pairs[i + 1][0] if i + 1 < len(pairs) else t + 6
+        tagged = _tagged(text)
+        if tagged:
+            starts = [s for s, _ in tagged] + [end]
+            words = [(s, max(s, starts[j + 1]), w, False) for j, (s, w) in enumerate(tagged)]
+        else:
+            words = ttml.spread(t, end, text.split())
+        out.append({"t": t, "end": max(t, end), "agent": None, "words": words})
     return out
 
 
 def _get(endpoint, params):
-    url = API + endpoint + "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": "Estela/1.0"})
-    # /get puede buscar fuera de LRCLIB y tardar bastante; las búsquedas son rápidas
-    with urllib.request.urlopen(req, timeout=12 if endpoint == "get" else 8) as r:
-        return json.load(r)
+    # timeout, límite de lectura y solo https de providers; /get puede buscar fuera de LRCLIB y tardar
+    body = providers.get(API + endpoint, params, timeout=12 if endpoint == "get" else 8)
+    if body is None:
+        raise urllib.error.HTTPError(API + endpoint, 404, "Not Found", None, None)
+    return json.loads(body)  # ValueError si no es JSON: _query lo trata como respuesta rara
 
 
 class Plain(list):
@@ -259,38 +288,111 @@ def _query(title, artist, album, duration):
     return None if err else []
 
 
-def fetch(title, artist, album, duration):
-    """Lista de (segundos, texto); [] si no hay letra sincronizada. Lanza OSError sin conexión."""
+def lrclib(title, artist, album, duration):
+    """Proveedor LRCLIB para search(): nivel 1 sincronizada, 2 con tiempos por palabra, 0 aproximada (Plain)."""
+    pairs = _query(title, artist, album, duration)
+    if pairs is None:  # alguna consulta falló: no es "sin letra"
+        raise OSError("LRCLIB no responde")
+    if isinstance(pairs, Plain):
+        return from_lrc(pairs), 0
+    return from_lrc(pairs), (2 if any(_tagged(text) for _, text in pairs) else 1)
+
+
+def search(title, artist, album, duration, on_update=None, jobs=None):
+    """Todos los proveedores en paralelo (5 s cada uno, 8 s en total). Gana el nivel más alto; empate = orden.
+
+    on_update(líneas, fuente) se llama desde otro hilo: con LRCLIB en cuanto llega y otra vez con cada letra
+    más detallada (quien la muestra la aplica al empezar la siguiente estrofa).
+    Devuelve (líneas, nivel, fuente, {proveedores con fallo de red o sin respuesta a tiempo}).
+    """
+    jobs = jobs or providers.PROVIDERS + [("LRCLIB", lrclib)]
+    best, failed = None, set()  # best = (líneas, nivel, fuente, prioridad)
+    results = queue.Queue()
+
+    def run(prio, name, fn):
+        try:
+            results.put((prio, name, fn(title, artist, album, duration), None))
+        except Exception as e:  # noqa: BLE001 (un proveedor roto no tumba a los demás)
+            results.put((prio, name, None, e))
+
+    # hilos daemon: uno colgado no impide cerrar el .exe
+    for prio, (name, fn) in enumerate(jobs):
+        threading.Thread(target=run, args=(prio, name, fn), daemon=True, name=f"letra-{name}").start()
+    pending = set(range(len(jobs)))
+    deadline = time.monotonic() + TOTAL_S
+    while pending:
+        try:
+            prio, name, result, error = results.get(timeout=max(0.0, deadline - time.monotonic()))
+        except queue.Empty:
+            failed |= {jobs[p][0] for p in pending}
+            break
+        pending.discard(prio)
+        if isinstance(error, OSError):
+            log.debug("%s: fallo de red (%s)", name, error)
+            failed.add(name)
+            continue
+        if error is not None:
+            log.warning("%s: respuesta no válida", name, exc_info=error)
+            continue
+        lines, level = result
+        if lines and (best is None or (level, -prio) > (best[1], -best[3])):
+            best = (lines, level, name, prio)
+            log.debug("Letra de %s (nivel %d)", name, level)
+            if on_update:
+                on_update(lines, name)
+        if best and best[1] == 2 and not any(p < best[3] for p in pending):
+            break  # ningún pendiente puede ganar ya
+    return (best[0], best[1], best[2], failed) if best else ([], 0, None, failed)
+
+
+def _legacy_cache(artist, title, duration):
+    """Letras guardadas por versiones anteriores ([(t, texto)] con clave "v2|…" o sin prefijo): sirven si tienen letra."""
+    base = f"{artist}|{title}|{round(duration)}".lower()
+    for key in (f"v2|{base}", base):
+        try:
+            with open(os.path.join(CACHE, hashlib.sha1(key.encode()).hexdigest() + ".json"), encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list) and data:
+                return from_lrc([tuple(x) for x in data])
+        except (OSError, ValueError, TypeError):
+            pass
+    return None
+
+
+def fetch_lines(title, artist, album, duration, on_update=None):
+    """Modelo de líneas; [] si no hay letra. Lanza OSError si LRCLIB no responde y nadie trae letra."""
     title, artist = clean(title, artist)
-    # "v2": los "sin letra" guardados por versiones que fallaban no cuentan
-    key = hashlib.sha1(f"v2|{artist}|{title}|{round(duration)}".lower().encode()).hexdigest()
+    key = hashlib.sha1(f"v3|{artist}|{title}|{round(duration)}".lower().encode()).hexdigest()
     path = os.path.join(CACHE, key + ".json")
     try:
         with open(path, encoding="utf-8") as f:
-            lines = json.load(f)
-        if lines or time.time() - os.path.getmtime(path) < MISS_TTL:
-            return [tuple(x) for x in lines]
-    except (OSError, ValueError):
+            data = json.load(f)
+        if data["v"] == 3 and (data["lines"] or time.time() - os.path.getmtime(path) < MISS_TTL):
+            lines = [dict(line, words=[tuple(w) for w in line["words"]]) for line in data["lines"]]
+            if lines and on_update:
+                on_update(lines, data.get("source"))
+            return lines
+    except (OSError, ValueError, KeyError, TypeError):
         pass
-    old = hashlib.sha1(f"{artist}|{title}|{round(duration)}".lower().encode()).hexdigest()
-    try:  # letras guardadas antes de "v2": sirven si tienen letra (sobre todo con LRCLIB caído)
-        with open(os.path.join(CACHE, old + ".json"), encoding="utf-8") as f:
-            lines = json.load(f)
-        if lines:
-            return [tuple(x) for x in lines]
-    except (OSError, ValueError):
-        pass
-    lines = _query(title, artist, album, duration)
-    if lines is None:  # alguna consulta falló: no es "sin letra", que la app reintente
-        raise OSError("LRCLIB no responde")
-    if isinstance(lines, Plain):
-        return lines  # aproximada: se muestra, pero no se guarda (la próxima vez se busca)
-    if not duration:
-        return lines  # sin duración puede ser otra versión: no se guarda en caché
+    lines, level, source, failed = search(title, artist, album, duration, on_update)
+    if not lines and "LRCLIB" in failed:
+        old = _legacy_cache(artist, title, duration)  # con LRCLIB caído, mejor la letra de antes
+        if old:
+            return old
+        raise OSError("LRCLIB no responde")  # un fallo de red no se guarda como "sin letra"
+    # sin duración puede ser otra versión; aproximada (nivel 0) o con fallos quizá faltó una mejor: no se guarda
+    if not duration or level == 0 or (failed and level < 2):
+        return lines
     try:
         os.makedirs(CACHE, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(lines, f, ensure_ascii=False)
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({"v": 3, "level": level, "source": source, "lines": lines}, f, ensure_ascii=False)
+        os.replace(path + ".tmp", path)
     except OSError:
         pass  # sin caché no es grave
     return lines
+
+
+def fetch(title, artist, album, duration):
+    """API anterior: [(segundos, texto)]; los tiempos por palabra van en TimedText. OSError sin conexión."""
+    return legacy(fetch_lines(title, artist, album, duration))

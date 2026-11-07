@@ -8,3 +8,7 @@ __pycache__/
 
 # Ajustes locales de Claude Code
 .claude/settings.local.json
+
+# Servidor de Escuchar juntos
+server/node_modules/
+server/.wrangler/

@@ -1,6 +1,8 @@
 @echo off
 rem Genera dist\Estela\Estela.exe. Requiere Python 3.12 de 64 bits.
+rem server\ (Escuchar juntos, Node) no forma parte del .exe: se publica aparte con deploy_servidor.bat
 setlocal
+set PYINSTALLER=6.11.1
 cd /d "%~dp0"
 
 py -3.12 --version >nul 2>&1 || (echo Falta Python 3.12: https://www.python.org/downloads/ & pause & exit /b 1)
@@ -13,7 +15,7 @@ call .venv\Scripts\activate.bat || goto :error
 
 echo Instalando dependencias...
 python -m pip install --upgrade pip -q || goto :error
-python -m pip install -r requirements.txt pyinstaller -q || goto :error
+python -m pip install -r requirements.txt pyinstaller==%PYINSTALLER% -q || goto :error
 
 echo Ejecutando tests...
 python -m unittest discover -s tests || goto :error
