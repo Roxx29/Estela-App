@@ -2,7 +2,10 @@
 // Protocolo: docs/protocolo.md
 
 export const ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-export const MAX_MIEMBROS = 10;
+export const MAX_MIEMBROS = 10; // aprobados
+export const MAX_PENDIENTES = 5;
+export const IDENT_MS = 10_000; // una conexión tiene 10 s para crear/unirse/reconectar
+export const MAX_INTENTOS = 5; // mensajes de entrada por conexión sin identificar
 export const MAX_BYTES = 4096;
 export const GRACIA_MS = 30_000;
 export const VACIA_MS = 600_000;
@@ -20,7 +23,7 @@ export type Sala = {
 };
 // Lo que no merece una escritura en disco: se pierde si el objeto hiberna.
 export type Memoria = { estado: Record<string, unknown> | null; limites: Map<string, number[]> };
-export type Adjunto = { id: string | null; nueva: boolean; codigo: string };
+export type Adjunto = { id: string | null; nueva: boolean; codigo: string; abierta: number; intentos: number };
 // `a` es un id de miembro o "yo" (la conexión que envió el mensaje).
 export type Resultado = {
   salidas: { a: string; msg: Record<string, unknown> }[];
@@ -87,6 +90,8 @@ function error(r: Resultado, codigo: string, mensaje: string, ref?: unknown, cer
 
 const conectados = (s: Sala) => s.miembros.filter((m) => m.aprobado && m.conectado);
 
+const aprobados = (s: Sala) => s.miembros.filter((m) => m.aprobado).length;
+
 const lista = (s: Sala) =>
   s.miembros.filter((m) => m.aprobado).map((m) => ({ id: m.id, nombre: m.nombre, conectado: m.conectado }));
 
@@ -126,6 +131,7 @@ function quitar(r: Resultado, s: Sala, id: string, ahora: number) {
 
 export function recibir(sala: Sala | null, mem: Memoria, att: Adjunto, data: unknown, ahora: number): Resultado {
   const r = vacio();
+  if (!att.id && ++att.intentos > MAX_INTENTOS) return error(r, "limite", "Demasiados intentos", null, true);
   if (typeof data !== "string" || data.length > MAX_BYTES) return error(r, "formato", "Mensaje no válido");
   let m: Record<string, unknown>;
   try { m = JSON.parse(data); } catch { return error(r, "formato", "No es JSON"); }
@@ -160,6 +166,7 @@ export function recibir(sala: Sala | null, mem: Memoria, att: Adjunto, data: unk
     if ((tipo === "aprobar" || tipo === "rechazar") === obj.aprobado) return error(r, "no-encontrado", "Miembro en otro estado", tipo);
     r.guardar = true;
     if (tipo === "aprobar") {
+      if (aprobados(sala) >= MAX_MIEMBROS) return error(r, "sala-llena", "La sala está llena", tipo);
       obj.aprobado = true; obj.token = nuevoToken(); obj.alta = ahora;
       r.salidas.push({ a: obj.id, msg: bienvenida(sala, obj, mem) });
       avisarMiembros(r, sala);
@@ -258,7 +265,8 @@ function entrar(r: Resultado, sala: Sala | null, mem: Memoria, att: Adjunto, m: 
 
   const nombre = texto(m.nombre, 1, 32);
   if (!nombre) return error(r, "campo-invalido", "nombre", tipo);
-  if (sala.miembros.length >= MAX_MIEMBROS) return error(r, "sala-llena", "La sala está llena", tipo, true);
+  if (aprobados(sala) >= MAX_MIEMBROS) return error(r, "sala-llena", "La sala está llena", tipo, true);
+  if (sala.miembros.length - aprobados(sala) >= MAX_PENDIENTES) return error(r, "limite", "Hay demasiadas solicitudes; prueba en un rato", tipo, true);
   const yo = nuevoMiembro(sala, nombre, false, ahora);
   sala.miembros.push(yo);
   r.asignar = yo.id;
@@ -300,4 +308,29 @@ export function proximaRevision(sala: Sala): number | null {
   if (!conectados(sala).length) return sala.vaciaDesde ? sala.vaciaDesde + VACIA_MS : null;
   const caidos = sala.miembros.filter((m) => m.aprobado && !m.conectado).map((m) => m.caido + GRACIA_MS);
   return caidos.length ? Math.min(...caidos) : null;
+}
+
+// Conexiones que no se identificaron a tiempo (índices) y cuándo caduca la siguiente.
+export function sinIdentificar(atts: (Adjunto | null)[], ahora: number): { caducadas: number[]; proxima: number | null } {
+  const caducadas: number[] = [];
+  let proxima: number | null = null;
+  atts.forEach((a, i) => {
+    if (!a || a.id) return;
+    const fin = a.abierta + IDENT_MS;
+    if (fin <= ahora) caducadas.push(i);
+    else proxima = Math.min(proxima ?? fin, fin);
+  });
+  return { caducadas, proxima };
+}
+
+// A qué conexiones enviar y cuáles cerrar. `yo` ya cuenta con el id de `r.asignar`, para que
+// una reconexión reciba lo suyo y solo se cierre la conexión vieja.
+export function repartir<T>(r: Resultado, socks: T[], idDe: (s: T) => string | null | undefined, yo: T | null) {
+  const id = (s: T) => (s === yo && r.asignar ? r.asignar : idDe(s));
+  const destino = (a: string, cerrando: boolean) =>
+    a === "yo" ? (yo ? [yo] : []) : socks.filter((s) => id(s) === a && !(cerrando && s === yo));
+  return {
+    envios: r.salidas.flatMap(({ a, msg }) => destino(a, false).map((s) => [s, JSON.stringify(msg)] as [T, string])),
+    cierres: r.cerrar.flatMap((a) => destino(a, true)),
+  };
 }

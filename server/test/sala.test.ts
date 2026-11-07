@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as S from "../src/sala.ts";
 
 const COD = "K7P2QX";
-const att = (id: string | null, nueva = false): S.Adjunto => ({ id, nueva, codigo: COD });
+const att = (id: string | null, nueva = false): S.Adjunto => ({ id, nueva, codigo: COD, abierta: 0, intentos: 0 });
 const j = (o: unknown) => JSON.stringify(o);
 const para = (r: S.Resultado, a: string) => r.salidas.filter((s) => s.a === a).map((s) => s.msg);
 const tipos = (r: S.Resultado, a: string) => para(r, a).map((m) => m.tipo);
@@ -186,9 +186,56 @@ test("sala vacía se borra a los 10 min; sin sala no se puede entrar", () => {
   assert.equal(para(r, "yo")[0].codigo, "sala-no-existe");
 });
 
-test("máximo de miembros", () => {
+test("máximo de aprobados y límite propio de 5 solicitudes pendientes", () => {
   const { sala, mem } = salaConDos();
-  for (let i = 0; i < S.MAX_MIEMBROS - 2; i++) S.recibir(sala, mem, att(null), j({ tipo: "unirse", codigo: COD, nombre: `n${i}` }), 0);
-  const r = S.recibir(sala, mem, att(null), j({ tipo: "unirse", codigo: COD, nombre: "sobra" }), 0);
-  assert.equal(para(r, "yo")[0].codigo, "sala-llena");
+  const unirse = (n: string) => S.recibir(sala, mem, att(null), j({ tipo: "unirse", codigo: COD, nombre: n }), 0);
+  for (let i = 0; i < S.MAX_PENDIENTES; i++) assert.equal(para(unirse(`p${i}`), "yo")[0].tipo, "pendiente");
+  const r = unirse("sobra");
+  assert.equal(para(r, "yo")[0].codigo, "limite");
+  assert.deepEqual(r.cerrar, ["yo"]);
+  // Los pendientes no ocupan plaza: se pueden aprobar hasta MAX_MIEMBROS.
+  for (const m of sala.miembros.filter((x) => !x.aprobado)) S.recibir(sala, mem, att("m1"), j({ tipo: "aprobar", id: m.id }), 0);
+  assert.equal(sala.miembros.filter((x) => x.aprobado).length, 7);
+  for (let i = 0; i < S.MAX_MIEMBROS - 7; i++) {
+    const id = para(unirse(`q${i}`), "yo")[0].id;
+    S.recibir(sala, mem, att("m1"), j({ tipo: "aprobar", id }), 0);
+  }
+  assert.equal(para(unirse("once"), "yo")[0].codigo, "sala-llena");
+});
+
+test("conexión sin identificar: máx. 5 intentos y caduca a los 10 s", () => {
+  const mem = S.nuevaMemoria();
+  const a = att(null);
+  for (let i = 0; i < S.MAX_INTENTOS; i++) assert.equal(para(S.recibir(null, mem, a, "basura", 0), "yo")[0].codigo, "formato");
+  const r = S.recibir(null, mem, a, "basura", 0);
+  assert.equal(para(r, "yo")[0].codigo, "limite");
+  assert.deepEqual(r.cerrar, ["yo"]);
+
+  const atts = [{ ...att(null), abierta: 0 }, { ...att(null), abierta: 5000 }, { ...att("m1"), abierta: 0 }, null];
+  assert.deepEqual(S.sinIdentificar(atts, S.IDENT_MS - 1), { caducadas: [], proxima: S.IDENT_MS });
+  assert.deepEqual(S.sinIdentificar(atts, S.IDENT_MS), { caducadas: [0], proxima: 5000 + S.IDENT_MS });
+});
+
+test("anfitrión que reconecta recibe en la conexión nueva las solicitudes pendientes; solo se cierra la vieja", () => {
+  const { sala, mem, tokenAna } = salaConDos();
+  S.desconectar(sala, "m1", 0); // el anfitrión se cae (gracia)
+  S.recibir(sala, mem, att(null), j({ tipo: "unirse", codigo: COD, nombre: "Eva" }), 1);
+  S.recibir(sala, mem, att("m2"), j({ tipo: "sugerir", titulo: "Canción", artista: "X" }), 1);
+  const r = S.recibir(sala, mem, att(null), j({ tipo: "reconectar", codigo: COD, token: tokenAna }), 2);
+  const vieja = { id: "m1" }, nueva = { id: null as string | null }, luis = { id: "m2" };
+  const { envios, cierres } = S.repartir(r, [vieja, nueva, luis], (s) => s.id, nueva);
+  const aNueva = envios.filter(([s]) => s === nueva).map(([, t]) => JSON.parse(t).tipo);
+  assert.ok(aNueva.includes("bienvenida") && aNueva.includes("solicitud") && aNueva.includes("sugerencia"), aNueva.join());
+  assert.deepEqual(cierres, [vieja]);
+});
+
+test("repartir: \"yo\" se cierra aunque tenga id; expulsar cierra a otro", () => {
+  const { sala, mem } = salaConDos();
+  const ana = { id: "m1" }, luis = { id: "m2" };
+  const e = S.recibir(sala, mem, att("m1"), j({ tipo: "expulsar", id: "m2" }), 0);
+  const x = S.repartir(e, [ana, luis], (s) => s.id, ana);
+  assert.deepEqual(x.cierres, [luis]);
+  assert.equal(JSON.parse(x.envios.find(([s]) => s === luis)![1]).tipo, "expulsado");
+  const sal = S.recibir(sala, mem, att("m1"), j({ tipo: "salir" }), 0);
+  assert.deepEqual(S.repartir(sal, [ana], (s) => s.id, ana).cierres, [ana]);
 });

@@ -14,13 +14,15 @@ desconocidos se ignoran. Tiempos `ts`/`hasta` en milisegundos del reloj del serv
 
 - Código: 6 caracteres de `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (sin `I L O 0 1`). Se acepta en minúsculas.
 - Límite por IP: 30 conexiones/min y 5 salas nuevas/min. Si se supera, HTTP 429 sin WebSocket.
-- Tras un error de entrada (`sala-no-existe`, `sala-llena`, `token-invalido`) el servidor cierra.
+- Tras un error de entrada (`sala-no-existe`, `sala-llena`, `token-invalido`, `limite`) el servidor cierra.
+- Una conexión tiene 10 s y 5 mensajes para identificarse (`crear`/`unirse`/`reconectar`); si no, se cierra.
 
 ## Límites
 
 | Qué | Valor |
 |---|---|
-| Miembros por sala (incluye anfitrión y pendientes) | 10 |
+| Miembros aprobados por sala (incluye anfitrión) | 10 |
+| Solicitudes pendientes por sala | 5 (aparte de los 10) |
 | Mensajes por miembro | 40 cada 10 s |
 | Chat | 300 caracteres, 5 cada 10 s |
 | Sugerencias | 3 cada 30 s, 20 pendientes por sala (se descarta la más antigua) |
@@ -104,9 +106,9 @@ miembros aprobados. `token` es secreto: guárdalo para `reconectar` y no lo mues
 | `no-autorizado` | Acción de anfitrión hecha por otro, o miembro aún pendiente |
 | `no-encontrado` | El `id`/`sid` no existe o no está en el estado correcto |
 | `sala-no-existe` | Código sin sala activa |
-| `sala-llena` | Ya hay 10 miembros |
+| `sala-llena` | Ya hay 10 miembros aprobados (al unirse o al `aprobar`) |
 | `token-invalido` | `reconectar` con token incorrecto o caducado |
-| `limite` | Demasiados mensajes, chats o sugerencias seguidos |
+| `limite` | Demasiados mensajes, chats, sugerencias, intentos sin identificarse o solicitudes pendientes |
 
 ## Ejemplo
 

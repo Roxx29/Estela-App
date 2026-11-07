@@ -48,57 +48,66 @@ export class SalaDO extends DurableObject<Env> {
     if (nueva && (this.sala || this.ctx.getWebSockets().length)) return new Response(null, { status: 409 });
     const { 0: cliente, 1: servidor } = new WebSocketPair();
     this.ctx.acceptWebSocket(servidor);
-    const att: S.Adjunto = { id: null, nueva, codigo: req.headers.get("X-Estela-Codigo") ?? "" };
+    const att: S.Adjunto = { id: null, nueva, codigo: req.headers.get("X-Estela-Codigo") ?? "", abierta: Date.now(), intentos: 0 };
     servidor.serializeAttachment(att);
+    await this.programar();
     return new Response(null, { status: 101, webSocket: cliente });
   }
 
   async webSocketMessage(ws: WebSocket, data: string | ArrayBuffer) {
     const att = ws.deserializeAttachment() as S.Adjunto;
-    await this.aplicar(ws, S.recibir(this.sala, this.mem, att, data, Date.now()));
+    await this.aplicar(ws, att, S.recibir(this.sala, this.mem, att, data, Date.now()));
   }
 
   async webSocketClose(ws: WebSocket) {
     try { ws.close(); } catch { /* ya cerrado */ }
     const att = ws.deserializeAttachment() as S.Adjunto | null;
-    if (att?.id && this.sala) await this.aplicar(ws, S.desconectar(this.sala, att.id, Date.now()));
+    if (att?.id && this.sala) await this.aplicar(null, null, S.desconectar(this.sala, att.id, Date.now()));
   }
 
   async webSocketError(ws: WebSocket) { await this.webSocketClose(ws); }
 
   async alarm() {
-    if (this.sala) await this.aplicar(null, S.revisar(this.sala, Date.now()));
+    const socks = this.ctx.getWebSockets();
+    const { caducadas } = S.sinIdentificar(socks.map(adjunto), Date.now());
+    for (const i of caducadas) cerrar(socks[i], "sin identificar");
+    if (this.sala) await this.aplicar(null, null, S.revisar(this.sala, Date.now()));
+    await this.programar();
   }
 
-  async aplicar(ws: WebSocket | null, r: S.Resultado) {
-    if (r.nueva) this.sala = r.nueva;
-    const socks = this.ctx.getWebSockets();
-    const idDe = (s: WebSocket) => (s.deserializeAttachment() as S.Adjunto | null)?.id;
-    const destino = (a: string) => (a === "yo" ? (ws ? [ws] : []) : socks.filter((s) => idDe(s) === a));
+  // Una sola alarma: la próxima revisión de la sala o la próxima conexión que caduca.
+  async programar() {
+    const { proxima } = S.sinIdentificar(this.ctx.getWebSockets().map(adjunto), Date.now());
+    const sala = this.sala ? S.proximaRevision(this.sala) : null;
+    const t = Math.min(proxima ?? Infinity, sala ?? Infinity);
+    if (t < Infinity) await this.ctx.storage.setAlarm(t);
+    else await this.ctx.storage.deleteAlarm();
+  }
 
-    for (const { a, msg } of r.salidas) {
-      const txt = JSON.stringify(msg);
-      for (const s of destino(a)) try { s.send(txt); } catch { /* conexión caída */ }
-    }
-    // Antes de asignar: así una reconexión cierra solo la conexión vieja.
-    for (const a of r.cerrar) for (const s of destino(a)) {
-      const att = s.deserializeAttachment() as S.Adjunto;
-      s.serializeAttachment({ ...att, id: null }); // que su cierre no cuente como desconexión
-      try { s.close(4000, "fin"); } catch { /* ya cerrado */ }
-    }
-    if (r.asignar && ws) ws.serializeAttachment({ ...(ws.deserializeAttachment() as S.Adjunto), id: r.asignar });
+  async aplicar(ws: WebSocket | null, att: S.Adjunto | null, r: S.Resultado) {
+    if (r.nueva) this.sala = r.nueva;
+    // Primero se asigna la conexión nueva: así recibe lo suyo y solo se cierran las viejas.
+    if (ws && att) ws.serializeAttachment({ ...att, id: r.asignar ?? att.id });
+    const { envios, cierres } = S.repartir(r, this.ctx.getWebSockets(), (s) => adjunto(s)?.id, ws);
+    for (const [s, txt] of envios) try { s.send(txt); } catch { /* conexión caída */ }
+    for (const s of cierres) cerrar(s, "fin");
 
     if (r.borrar) {
       this.sala = null;
-      for (const s of this.ctx.getWebSockets()) try { s.close(4000, "sala cerrada"); } catch { /* ya cerrado */ }
+      for (const s of this.ctx.getWebSockets()) cerrar(s, "sala cerrada");
       await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
       return;
     }
     if (!r.guardar || !this.sala) return;
     await this.ctx.storage.put("sala", this.sala);
-    const t = S.proximaRevision(this.sala);
-    if (t) await this.ctx.storage.setAlarm(t);
-    else await this.ctx.storage.deleteAlarm();
+    await this.programar();
   }
+}
+
+const adjunto = (s: WebSocket) => s.deserializeAttachment() as S.Adjunto | null;
+
+function cerrar(s: WebSocket, motivo: string) {
+  try { s.serializeAttachment(null); } catch { /* ya cerrado */ } // que su cierre no cuente como desconexión
+  try { s.close(4000, motivo); } catch { /* ya cerrado */ }
 }
