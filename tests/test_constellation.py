@@ -95,7 +95,15 @@ class TestConstellationPaint(unittest.TestCase):
             self.paint(0.5 + 3.5 * i / n)
         ms = (time.perf_counter() - t0) / n * 1000
         print(f"\nconstelación: {ms:.2f} ms/fotograma (offscreen, 1280×720)")
-        self.assertLess(ms, 16)  # holgado en CI; el objetivo en la app es < 4 ms
+        self.assertLess(ms, 4)  # presupuesto: < 4 ms por fotograma (aquí ~1 ms: margen para CI y equipos lentos)
+
+    def test_transicion_sin_guardar(self):
+        settings = self.win.settings
+        self.win.set_transition("rain", persist=False)  # invitado de una sala: la del anfitrión, sin guardarla
+        self.assertEqual(self.win.trans_setting, "rain")
+        self.assertNotIn("lyrics_transition", settings)
+        self.win.set_transition("wave")
+        self.assertEqual(settings["lyrics_transition"], "wave")
 
 
 if __name__ == "__main__":
