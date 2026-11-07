@@ -1,0 +1,16 @@
+{
+  "name": "estela-servidor",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "4.158.0"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
