@@ -57,7 +57,7 @@ class RoomPanel(QFrame):
         self.members, self.requests, self.suggestions = [], {}, {}
         self.rate, self.rate_ok, self.cmd_t = 1.0, True, -1e9
         self.opening = self.before_open = None
-        self.sent, self.sent_t = None, -1e9
+        self.sent, self.sent_t, self.last_msg = None, -1e9, None
         self.own_transition = None  # la del invitado, se restaura al salir
         self.found.connect(self._on_found)
         watcher.command_failed.connect(self._on_command_failed)
@@ -157,10 +157,8 @@ class RoomPanel(QFrame):
         self.setGeometry(self.window.width() - WIDTH, 0, WIDTH, self.window.height())
 
     def _reserve(self, px):
-        # TODO(estela-constelacion): cuando LyricsWindow exponga set_reserved_right(px), la constelación
-        # dejará libre la franja del panel; mientras no exista, el panel se superpone a la letra.
-        if hasattr(self.window, "set_reserved_right"):
-            self.window.set_reserved_right(px)
+        if hasattr(self.window, "reserve_right"):  # la constelación deja libre la franja del panel
+            self.window.reserve_right(px)
 
     def open(self):
         self._place()
@@ -283,9 +281,8 @@ class RoomPanel(QFrame):
         if self.rate != 1.0:
             self.watcher.command("rate", 1.0)
         self.rate, self.rate_ok = 1.0, True
-        if self.own_transition:
-            self.window.set_transition(self.own_transition)
-            self.own_transition = None
+        self._restore_transition()
+        self._set_seed(None)
         for d in (self.requests, self.suggestions):
             for w in d.values():
                 w.deleteLater()
@@ -302,7 +299,7 @@ class RoomPanel(QFrame):
             return
         t = m.get("tipo")
         if t == "bienvenida":
-            self.me, self.code = m.get("id"), m.get("codigo") or self.code
+            self.me, self.code = m.get("id"), room.normalize_code(m.get("codigo")) or self.code
             self.code_label.setText(self.code)
             self.status.setText("")
             self._members(m)
@@ -348,9 +345,26 @@ class RoomPanel(QFrame):
         self.suggest.setVisible(not self.is_host())
         if self.is_host():
             self.state = None  # el anfitrión manda; no sigue a nadie
-            if self.own_transition:
-                self.window.set_transition(self.own_transition)
-                self.own_transition = None
+            self._restore_transition()
+            self._set_seed(None)
+
+    def _set_transition(self, setting):
+        """Lo que manda el anfitrión no se guarda en los ajustes del invitado."""
+        try:
+            self.window.set_transition(setting, persist=False)
+        except TypeError:  # ventana aún sin el parámetro
+            self.window.set_transition(setting)
+
+    def _restore_transition(self):
+        if self.own_transition:
+            self._set_transition(self.own_transition)
+            self.own_transition = None
+
+    def _set_seed(self, seed):
+        # TODO(estela-constelacion): LyricsWindow.set_room_seed(seed | None) para que las estrofas usen la
+        # semilla del anfitrión en vez del título local; mientras no exista, se ignora
+        if hasattr(self.window, "set_room_seed"):
+            self.window.set_room_seed(seed)
 
     def _row(self, store, box, ident, text, actions, key="id"):
         if ident is None or ident in store:
@@ -394,27 +408,38 @@ class RoomPanel(QFrame):
             self._sync(snap)
 
     def _publish(self, snap):
-        if not snap or snap["ad"]:
+        if not snap:
             return
-        now, pos = time.monotonic(), media.position(snap)
+        now = time.monotonic()
+        if snap["ad"]:  # anuncio: los invitados se paran en la canción (no abren el anuncio)
+            if self.sent and self.sent[0][2] and self.last_msg:
+                k, p, t = self.sent
+                pos = min(p + now - t, self.last_msg["duracion"] or 86400.0)
+                self.last_msg = {**self.last_msg, "reproduciendo": False, "posicion": pos}
+                self.client.send(self.last_msg)
+                self.sent, self.sent_t = ((k[0], k[1], False), pos, now), now
+            return
+        pos = media.position(snap)
         key = (snap["title"], snap["artist"], snap["playing"])
         if self.sent:  # ¿saltó la barra?
             k, p, t = self.sent
             jumped = abs(pos - (p + (now - t if k[2] else 0))) > 1.5
         if self.sent is None or key != self.sent[0] or jumped or now - self.sent_t >= 5.0:
             seed = zlib.crc32(f"{snap['title']}|{snap['artist']}".encode())
-            self.client.send(room.host_state(snap, pos, self.window.trans_setting, seed))
+            self.last_msg = room.host_state(snap, pos, self.window.trans_setting, seed)
+            self.client.send(self.last_msg)
             self.sent, self.sent_t = (key, pos, now), now
 
     def _on_state(self, st):
-        need = ("titulo", "artista", "duracion", "posicion", "reproduciendo", "ts")
-        if self.is_host() or not all(k in st for k in need):
+        if self.is_host() or not room.valid_state(st):
             return
         self.state = st
         tr = st.get("transicion")
         if tr in transitions.SETTINGS and tr != self.window.trans_setting:
             self.own_transition = self.own_transition or self.window.trans_setting
-            self.window.set_transition(tr)
+            self._set_transition(tr)
+        if room.valid_seed(st.get("semilla")):
+            self._set_seed(st["semilla"])
         self._sync(self.window.snap)
 
     def _matches(self, snap, st):
@@ -461,7 +486,7 @@ class RoomPanel(QFrame):
         if guest and snap and snap["playing"]:
             self.watcher.command("pause")
         vid = st.get("videoId")
-        if vid:
+        if ytsearch.valid_id(vid):
             return self._on_found(song_key, (vid, st["titulo"], st["artista"], st["duracion"]), guest)
 
         def work():
@@ -478,7 +503,7 @@ class RoomPanel(QFrame):
         if song_key != self.opening:
             return
         name = room.clean_text(song_key[0], 80)
-        if not res:
+        if not res or not ytsearch.valid_id(res[0]):  # nunca se abre un enlace con un id ajeno sin validar
             return self._say(TXT["not-found"].format(song=name))
         text = TXT["opening"].format(song=name)
         if not room.same_song(res[1], res[2], 0, *song_key, 0):

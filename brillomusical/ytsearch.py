@@ -13,6 +13,10 @@ _DUR = re.compile(r"^(?:(\d+):)?(\d{1,2}):(\d{2})$")
 _VID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 
+def valid_id(v):
+    return isinstance(v, str) and bool(_VID.match(v))
+
+
 def _walk(o):
     if isinstance(o, dict):
         yield o

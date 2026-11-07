@@ -4,6 +4,7 @@ El cliente vive en su propio hilo (websockets síncrono) y solo emite señales Q
 """
 import json
 import logging
+import math
 import random
 import re
 import threading
@@ -44,6 +45,8 @@ TXT = {
     "opening": "Abriendo {song} en YouTube Music…",
 }
 FATAL = ("sala-no-existe", "sala-llena", "token-invalido")
+ENTRY = ("crear", "unirse", "reconectar")
+TXT["limite"] = "Demasiados intentos. Prueba en un rato."
 _BIDI = dict.fromkeys(map(ord, "؜‎‏‪‫‬‭‮⁦⁧⁨⁩"))
 _URL = re.compile(r"(?:wss?|https?)://[^\s]+", re.I)
 _CODE = re.compile(r"^[A-HJKMNP-Z2-9]{6}$")
@@ -145,11 +148,32 @@ def host_state(snap, pos, transition, seed):
     """Mensaje `estado` del anfitrión, dentro de los rangos del protocolo."""
     dur = max(0.0, min(86400.0, float(snap["duration"] or 0)))
     return {
-        "tipo": "estado", "titulo": (snap["title"] or "")[:200], "artista": (snap["artist"] or "")[:200],
-        "album": (snap["album"] or "")[:200], "duracion": dur,
+        "tipo": "estado", "titulo": clean_text(snap["title"], 200), "artista": clean_text(snap["artist"], 200),
+        "album": clean_text(snap["album"], 200), "duracion": dur,
         "posicion": max(0.0, min(dur or 86400.0, float(pos))), "reproduciendo": bool(snap["playing"]),
-        "semilla": seed & 0x7FFFFFFF, "transicion": (transition or "")[:32],
+        "semilla": seed & 0x7FFFFFFF, "transicion": clean_text(transition, 32),
     }
+
+
+def _num(v, lo=0.0, hi=86400.0):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and lo <= v <= hi
+
+
+def valid_state(st):
+    """`estado` remoto utilizable: textos, números finitos en rango y booleano de verdad."""
+    return (isinstance(st, dict) and isinstance(st.get("titulo"), str) and isinstance(st.get("artista"), str)
+            and _num(st.get("duracion")) and _num(st.get("posicion")) and _num(st.get("ts"), 0.0, 1e15)
+            and isinstance(st.get("reproduciendo"), bool))
+
+
+def valid_seed(v):
+    return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 0x7FFFFFFF
+
+
+def is_fatal(msg, has_token):
+    """Error que cierra la conexión: los de entrada (ref crear/unirse/reconectar) o `limite` sin estar dentro."""
+    c = msg.get("codigo")
+    return (c in FATAL and msg.get("ref") in ENTRY) or (c == "limite" and not has_token)
 
 
 def fmt_mss(sec):
@@ -253,13 +277,16 @@ class RoomClient(QObject):
                         self.clock.emit(clock_offset(pings))
                 continue
             if t == "bienvenida":
-                self.code, self.token, next_sync = msg.get("codigo") or self.code, msg.get("token"), 0.0
-            elif t == "error" and msg.get("codigo") in FATAL:
+                if not isinstance(msg.get("token"), str):
+                    continue
+                msg["codigo"] = normalize_code(msg.get("codigo")) or self.code
+                self.code, self.token, next_sync = msg["codigo"], msg["token"], 0.0
+            elif t == "error" and is_fatal(msg, bool(self.token)):
                 self._stop.set()
                 c = msg["codigo"]
                 # con token ya estábamos dentro: la sala ya no existe o nos quitaron
-                raise _Stop(TXT["closed"] if self.token else TXT[c].format(code=self.code)
-                            if c != "token-invalido" else TXT["left"])
+                raise _Stop(TXT["limite"] if c == "limite" else TXT["closed"] if self.token
+                            else TXT[c].format(code=self.code) if c != "token-invalido" else TXT["left"])
             elif t in ("rechazado", "expulsado"):
                 self._stop.set()
                 raise _Stop(TXT["rechazado"] if t == "rechazado" else TXT["left"])

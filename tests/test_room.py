@@ -84,5 +84,101 @@ class TestTextos(unittest.TestCase):
         self.assertEqual(room.fmt_mss(125.9), "2:05")
 
 
+class TestRevision(unittest.TestCase):
+    def test_errores_fatales(self):
+        self.assertFalse(room.is_fatal({"codigo": "sala-llena", "ref": "aprobar"}, True))  # el anfitrión sigue
+        self.assertTrue(room.is_fatal({"codigo": "sala-llena", "ref": "unirse"}, False))
+        self.assertTrue(room.is_fatal({"codigo": "sala-no-existe", "ref": "reconectar"}, True))
+        self.assertTrue(room.is_fatal({"codigo": "limite", "ref": None}, False))  # sin token: no reintentar
+        self.assertFalse(room.is_fatal({"codigo": "limite", "ref": "chat"}, True))
+
+    def test_estado_sin_bidi(self):
+        snap = {"title": "‮سلام\x00", "artist": "⁧שלום", "album": "a‏b", "duration": 10.0,
+                "playing": False}
+        m = room.host_state(snap, 1.0, "travel\x07", 1)
+        self.assertEqual((m["titulo"], m["artista"], m["album"], m["transicion"]), ("سلام", "שלום", "ab", "travel"))
+
+    def test_estado_remoto_valido(self):
+        ok = {"titulo": "t", "artista": "a", "duracion": 200, "posicion": 1.5, "reproduciendo": True, "ts": 1.7e12}
+        self.assertTrue(room.valid_state(ok))
+        for bad in ({"posicion": float("nan")}, {"duracion": float("inf")}, {"posicion": -1}, {"duracion": 90000},
+                    {"ts": "1"}, {"reproduciendo": 1}, {"posicion": True}, {"titulo": None}):
+            self.assertFalse(room.valid_state({**ok, **bad}), bad)
+        self.assertFalse(room.valid_state(None))
+
+    def test_semilla_y_video(self):
+        self.assertTrue(room.valid_seed(0) and room.valid_seed(2147483647))
+        for bad in (-1, 2147483648, 1.5, True, "1", None):
+            self.assertFalse(room.valid_seed(bad), bad)
+        self.assertTrue(ytsearch.valid_id("dQw4w9WgXcQ"))
+        for bad in ("dQw4w9WgXc", "dQw4w9WgXcQ&x=1", "../../evil1", None, 5):
+            self.assertFalse(ytsearch.valid_id(bad), bad)
+        self.assertIsNone(room.normalize_code("../x"))
+
+
+class TestPanel(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import os
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self):
+        from PySide6.QtCore import QObject, QSettings, Signal
+        from PySide6.QtWidgets import QWidget
+        from brillomusical import room_ui
+
+        class Win(QWidget):
+            trans_setting, snap = "auto", None
+            calls = []
+
+            def toast(self, *a):
+                pass
+
+            def set_transition(self, setting, persist=True):
+                self.calls.append((setting, persist))
+                self.trans_setting = setting
+
+        class Watcher(QObject):
+            command_failed = Signal(str, object)
+
+            def command(self, *a):
+                pass
+
+        class Client:
+            sent = []
+
+            def send(self, m):
+                self.sent.append(m)
+
+        p = room_ui.RoomPanel(Win(), QSettings("EstelaTest", "unittest"), Watcher())
+        p.client = Client()
+        return p
+
+    def test_anuncio_del_anfitrion_pausa_a_los_invitados(self):
+        import time
+        p = self._panel()
+        p.me = p.host = "m1"
+        snap = {"title": "Song", "artist": "A", "album": "X", "duration": 200.0, "playing": True, "ad": False,
+                "pos": 10.0, "stamp": time.time(), "rate": 1.0}
+        p.on_snapshot(snap)
+        p.on_snapshot({**snap, "title": "Anuncio", "ad": True})
+        p.on_snapshot({**snap, "title": "Anuncio", "ad": True})  # solo una vez
+        sent = p.client.sent
+        self.assertEqual(len(sent), 2)
+        self.assertEqual((sent[1]["titulo"], sent[1]["reproduciendo"]), ("Song", False))
+
+    def test_transicion_del_anfitrion_no_se_guarda(self):
+        p = self._panel()
+        p.me, p.host = "m2", "m1"
+        p._on_state({"titulo": "t", "artista": "a", "duracion": 100, "posicion": 0, "reproduciendo": False,
+                     "ts": 1.7e12, "transicion": "travel", "semilla": 7})
+        self.assertEqual(p.window.calls[-1], ("travel", False))
+        p._on_state({"titulo": "t", "artista": "a", "duracion": float("nan"), "posicion": 0,
+                     "reproduciendo": False, "ts": 1.7e12})
+        self.assertEqual(p.state["duracion"], 100)  # el estado roto se ignora
+
+
 if __name__ == "__main__":
     unittest.main()
