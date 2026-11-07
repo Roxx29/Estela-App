@@ -13,11 +13,12 @@ from PySide6.QtCore import QLockFile, QObject, QSettings, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import artwork, audio, backdrop, beat, color, cover, lyrics, transitions
+from . import artwork, audio, backdrop, beat, color, constellation, cover, lyrics, transitions
 from .color import FALLBACK
-from .constellation import HELP, SEARCHING, LyricsWindow
+from .constellation import SEARCHING, LyricsWindow
 from .glow import Glow
 from .media import MediaWatcher
+from .room_ui import RoomPanel
 from .vsync import FrameClock
 
 DATA = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BrilloMusical")
@@ -35,6 +36,9 @@ BG_EVERY = 20.0  # el fondo automático, como mucho cada 20 s
 NO_LYRICS, OFFLINE = "Sin letra para esta canción", "Sin conexión · reintentando…"
 
 log = logging.getLogger("brillomusical")
+# J abre Escuchar juntos (la tecla H lee constellation.HELP al pulsarla)
+if "J " not in constellation.HELP:
+    constellation.HELP += " · J escuchar juntos"
 
 
 def resource(name):
@@ -73,6 +77,8 @@ class Controller(QObject):
         self.watcher = MediaWatcher()
         self.watcher.snapshot.connect(self._on_snapshot)
         app.aboutToQuit.connect(self.watcher.stop)
+        self.room = RoomPanel(self.window, self.settings, self.watcher)
+        app.aboutToQuit.connect(lambda: self.room.leave(quiet=True))
         # modo del borde: "auto" decide por canción; uno fijado a mano gana siempre
         self.manual = self.settings.value("glow_mode", "auto")
         self.line_pulse = self.settings.value("line_pulse", True, type=bool)
@@ -160,7 +166,9 @@ class Controller(QObject):
         offset.addAction(f"Retrasar letra (−{step} s)", lambda: self._shift_offset(-OFFSET_STEP))
         offset.addAction("Restablecer sincronía", lambda: self._shift_offset(None))
         menu.addSeparator()
-        menu.addAction("Atajos de teclado", lambda: self.tray.showMessage("Atajos en la ventana de la letra", HELP))
+        menu.addAction("Escuchar juntos…", self._open_room)
+        menu.addAction("Atajos de teclado",
+                       lambda: self.tray.showMessage("Atajos en la ventana de la letra", constellation.HELP))
         menu.addAction("Salir de BrilloMusical", self._quit)
         self.tray = QSystemTrayIcon(QIcon(resource("icon.ico")), app)
         self.tray.setToolTip("BrilloMusical")
@@ -342,6 +350,10 @@ class Controller(QObject):
         self.window.raise_()
         self.window.activateWindow()
 
+    def _open_room(self):
+        self._open()
+        self.room.open()
+
     def _quit(self):
         if self.window.isVisible():
             self.window.close()  # guarda la posición
@@ -349,6 +361,10 @@ class Controller(QObject):
         QApplication.quit()
 
     def _on_snapshot(self, snap):
+        self._on_track_snapshot(snap)
+        self.room.on_snapshot(snap)  # después: el invitado compara con la foto ya aplicada
+
+    def _on_track_snapshot(self, snap):
         if snap and (snap["title"], snap["artist"], snap["album"]) != self.track:
             self.audio_fails = 0  # p. ej. cambiaron los auriculares: se vuelve a intentar
         self._update_audio(snap)

@@ -35,6 +35,7 @@ async def read_thumbnail(ref):
 
 class MediaWatcher(QObject):
     snapshot = Signal(object)
+    command_failed = Signal(str, object)  # (orden, valor): el navegador no la aceptó
 
     def __init__(self):
         super().__init__()
@@ -42,6 +43,7 @@ class MediaWatcher(QObject):
         self._last_hash = None
         self._anchor = {}  # app -> (posición, stamp) de la última foto
         self._last_seen = 0.0
+        self._loop = self._session = None  # sesión de la última foto: las órdenes van a esa
         self._stop = threading.Event()
         self._thread = threading.Thread(target=lambda: asyncio.run(self._run()), daemon=True, name="smtc")
         self._thread.start()
@@ -50,7 +52,32 @@ class MediaWatcher(QObject):
         self._stop.set()
         self._thread.join(timeout=2)
 
+    def command(self, kind, value=None):
+        """Orden a la sesión de la última foto desde el hilo de Qt: play, pause, seek (s) o rate."""
+        loop = self._loop
+        if not loop:
+            self.command_failed.emit(kind, value)
+            return
+        fut = asyncio.run_coroutine_threadsafe(self._command(kind, value), loop)
+        fut.add_done_callback(lambda f: (f.cancelled() or f.exception() or not f.result())
+                              and self.command_failed.emit(kind, value))
+
+    async def _command(self, kind, value):
+        s = self._session
+        if s is None:
+            return False
+        if kind == "play":
+            return await s.try_play_async()
+        if kind == "pause":
+            return await s.try_pause_async()
+        if kind == "seek":
+            return await s.try_change_playback_position_async(int(max(0.0, value) * 10_000_000))
+        if kind == "rate":
+            return await s.try_change_playback_rate_async(value)
+        return False
+
     async def _run(self):
+        self._loop = asyncio.get_running_loop()
         manager = None
         while not self._stop.is_set():
             snap = None
@@ -84,6 +111,7 @@ class MediaWatcher(QObject):
                 log.warning("Sesión con error, se ignora", exc_info=True)
                 continue
             if snap:
+                self._session = s
                 return snap
         return None
 
