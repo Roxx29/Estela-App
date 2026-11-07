@@ -189,6 +189,26 @@ class TestBusqueda(unittest.TestCase):
         _, level, source, failed = lyrics.search("t", "a", "", 180, jobs=jobs)
         self.assertEqual((level, source, failed), (1, "C", {"B"}))
 
+    def test_proveedor_colgado_no_bloquea_ni_impide_cerrar(self):
+        import threading
+        import time
+        from unittest import mock
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        def hung(*a):
+            release.wait(30)
+            return [], 0
+
+        with mock.patch.object(lyrics, "TOTAL_S", 0.3):
+            t0 = time.monotonic()
+            lines, _, source, failed = lyrics.search(
+                "t", "a", "", 180, jobs=[("Colgado", hung), ("LRCLIB", lambda *a: ([_line(1, "x")], 1))])
+        self.assertLess(time.monotonic() - t0, 2)
+        self.assertEqual((source, failed), ("LRCLIB", {"Colgado"}))
+        alive = [t for t in threading.enumerate() if t.name == "letra-Colgado"]
+        self.assertTrue(alive and all(t.daemon for t in alive))  # no retiene la salida del proceso
+
 
 class TestFetchLines(unittest.TestCase):
     def setUp(self):
@@ -236,9 +256,28 @@ class TestProviders(unittest.TestCase):
             def read(self, n):
                 return b"x" * n
 
-        with mock.patch("urllib.request.urlopen", lambda *a, **k: Resp()):
+        with mock.patch.object(providers._OPENER, "open", lambda *a, **k: Resp()):
             self.assertIsNone(providers.get("https://x.test"))
         self.assertIsNone(providers.get("http://x.test"))  # solo https
+
+    def test_respuesta_cortada_es_fallo_de_red(self):
+        import http.client
+        from unittest import mock
+        from brillomusical import providers
+
+        def cut(*a, **k):
+            raise http.client.IncompleteRead(b"abc", 100)
+
+        with mock.patch.object(providers._OPENER, "open", cut):
+            with self.assertRaises(OSError):
+                providers.get("https://x.test")
+
+    def test_redireccion_solo_a_https(self):
+        import urllib.request
+        from brillomusical import providers
+        h, req = providers._HttpsOnly(), urllib.request.Request("https://x.test")
+        self.assertIsNone(h.redirect_request(req, None, 302, "", {}, "http://x.test/"))
+        self.assertIsNotNone(h.redirect_request(req, None, 302, "", {}, "https://y.test/"))
 
     def test_duracion_mas_menos_3s(self):
         from brillomusical import providers
