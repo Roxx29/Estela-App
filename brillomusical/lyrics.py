@@ -14,7 +14,7 @@ import urllib.error
 from . import providers, ttml
 
 API = "https://lrclib.net/api/"
-CACHE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Estela", "lyrics2")  # caché v2
+CACHE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BrilloMusical", "lyrics")  # misma carpeta: claves v3 y se leen las de antes
 TOTAL_S = 8.0  # espera máxima a todos los proveedores
 MISS_TTL = 24 * 3600  # "sin letra" se vuelve a buscar al día siguiente
 
