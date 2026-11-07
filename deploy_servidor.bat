@@ -21,7 +21,12 @@ if not errorlevel 1 (
 set "WRANGLER_OUTPUT_FILE_PATH=%TEMP%\estela_deploy.json"
 del "%WRANGLER_OUTPUT_FILE_PATH%" >nul 2>&1
 echo Publicando...
+rem En el primer despliegue Cloudflare tarda unos segundos en registrar el Worker (error 10007): se reintenta
+call npx wrangler deploy && goto :ok
+echo Reintentando en 10 s (normal la primera vez)...
+timeout /t 10 /nobreak >nul
 call npx wrangler deploy || (echo Fallo la publicacion. & pause & exit /b 1)
+:ok
 
 echo.
 node -e "const l=require('fs').readFileSync(process.argv[1],'utf8').split('\n').filter(Boolean).map(JSON.parse).find(e=>e.type==='deploy');const u=(l&&l.targets||[])[0];console.log(u?'URL del servidor (pegala en Estela): '+u.replace(/^https:/,'wss:')+'/ws':'No se encontro la URL: mira la salida de arriba (https://...workers.dev, cambia https por wss y anade /ws).')" "%WRANGLER_OUTPUT_FILE_PATH%"
