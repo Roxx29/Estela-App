@@ -137,6 +137,125 @@ class TestQuery(unittest.TestCase):
             self.assertEqual(lyrics._query("t", "a", "", 180.0), [(1.0, "B")])
 
 
+def _line(t, *words, end=None):
+    ws = [(t + i, t + i + 0.5, w, False) for i, w in enumerate(words)]
+    return {"t": t, "end": end or (ws[-1][1] if ws else t), "agent": None, "words": ws}
+
+
+class TestModelo(unittest.TestCase):
+    def test_from_lrc_conserva_vacias_y_etiquetas(self):
+        lines = lyrics.from_lrc([(1.0, "<00:01.00>a <00:01.50>b"), (3.0, ""), (4.0, "c d")])
+        self.assertEqual(lines[0]["words"], [(1.0, 1.5, "a", False), (1.5, 3.0, "b", False)])
+        self.assertEqual((lines[1]["t"], lines[1]["words"]), (3.0, []))
+        self.assertEqual(lines[2]["end"], 10.0)
+
+    def test_legacy_mantiene_tiempos_por_palabra(self):
+        old = lyrics.legacy([_line(1.0, "uno", "dos"), _line(5.0)])
+        self.assertEqual(old, [(1.0, "uno dos"), (5.0, "")])
+        self.assertEqual(lyrics.word_times(old, 0), [1.0, 2.0])
+        self.assertEqual(lyrics.words(old[0][1]), ["uno", "dos"])
+        self.assertEqual(lyrics.word_times(old, 1), [])
+
+
+class TestBusqueda(unittest.TestCase):
+    def test_gana_el_mas_detallado_y_avisa_al_llegar(self):
+        import threading
+        gate = threading.Event()
+        seen = []
+
+        def lrclib(*a):
+            return [_line(1.0, "lrc")], 1
+
+        def slow_word(*a):
+            gate.wait(2)
+            return [_line(1.0, "palabra")], 2
+
+        def update(lines, source):
+            seen.append(source)
+            gate.set()  # el detallado llega después de LRCLIB
+
+        lines, level, source, failed = lyrics.search("t", "a", "", 180, update,
+                                                     jobs=[("Better", slow_word), ("LRCLIB", lrclib)])
+        self.assertEqual((seen, source, level, failed), (["LRCLIB", "Better"], "Better", 2, set()))
+
+    def test_empate_por_prioridad_y_errores(self):
+        def bad(*a):
+            raise ValueError("roto")
+
+        def net(*a):
+            raise OSError("red")
+
+        jobs = [("A", bad), ("B", net), ("C", lambda *a: ([_line(1, "c")], 1)), ("D", lambda *a: ([_line(1, "d")], 1))]
+        _, level, source, failed = lyrics.search("t", "a", "", 180, jobs=jobs)
+        self.assertEqual((level, source, failed), (1, "C", {"B"}))
+
+
+class TestFetchLines(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from unittest import mock
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.object(lyrics, "CACHE", self.tmp.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _search(self, result):
+        from unittest import mock
+        return mock.patch.object(lyrics, "search", lambda *a, **k: result)
+
+    def test_fallo_de_red_no_se_guarda_como_sin_letra(self):
+        with self._search(([], 0, None, {"LRCLIB"})):
+            with self.assertRaises(OSError):
+                lyrics.fetch_lines("t", "a", "", 180)
+        with self._search(([], 0, None, {"YouLy+"})):
+            self.assertEqual(lyrics.fetch_lines("t", "a", "", 180), [])
+        import os
+        self.assertEqual(os.listdir(self.tmp.name), [])
+
+    def test_cache_v2_y_api_anterior(self):
+        with self._search(([_line(1.0, "hola", "mundo")], 2, "Better", set())):
+            first = lyrics.fetch("t", "a", "", 180)
+        with self._search(None):  # ya no busca: sale de la caché
+            self.assertEqual(lyrics.fetch("t", "a", "", 180), first)
+        self.assertEqual(lyrics.word_times(first, 0), [1.0, 2.0])
+
+
+class TestProviders(unittest.TestCase):
+    def test_limite_de_lectura(self):
+        from unittest import mock
+        from brillomusical import providers
+
+        class Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self, n):
+                return b"x" * n
+
+        with mock.patch("urllib.request.urlopen", lambda *a, **k: Resp()):
+            self.assertIsNone(providers.get("https://x.test"))
+        self.assertIsNone(providers.get("http://x.test"))  # solo https
+
+    def test_duracion_mas_menos_3s(self):
+        from brillomusical import providers
+        lines = [_line(1.0, "a", end=178.0)]
+        self.assertTrue(providers.fits(lines, 180, 182.5))
+        self.assertFalse(providers.fits(lines, 180, 184))
+        self.assertFalse(providers.fits([_line(1.0, "a", end=190.0)], 180))
+
+    def test_youly_silabas_y_coro(self):
+        from brillomusical import providers
+        line = providers.youly_line({"time": 1000, "duration": 2000, "element": {"singer": "v2"}, "syllabus": [
+            {"text": "Ho", "time": 1000, "duration": 300}, {"text": "la ", "time": 1300, "duration": 300},
+            {"text": "(sí)", "time": 2000, "duration": 500, "isBackground": True}]})
+        self.assertEqual(line["agent"], "v2")
+        self.assertEqual(line["words"], [(1.0, 1.6, "Hola", False), (2.0, 2.5, "sí", True)])
+
+
 class TestAd(unittest.TestCase):
     def test_anuncios(self):
         self.assertTrue(lyrics.is_ad("Song", "", "Album", 200))
