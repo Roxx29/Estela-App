@@ -51,6 +51,7 @@ class MediaWatcher(QObject):
     def stop(self):
         self._stop.set()
         self._thread.join(timeout=2)
+        self._loop = None  # órdenes posteriores (p. ej. al salir) no tocan un bucle cerrado
 
     def command(self, kind, value=None):
         """Orden a la sesión de la última foto desde el hilo de Qt: play, pause, seek (s) o rate."""
@@ -58,7 +59,12 @@ class MediaWatcher(QObject):
         if not loop:
             self.command_failed.emit(kind, value)
             return
-        fut = asyncio.run_coroutine_threadsafe(self._command(kind, value), loop)
+        coro = self._command(kind, value)
+        try:
+            fut = asyncio.run_coroutine_threadsafe(coro, loop)
+        except RuntimeError:  # bucle ya cerrado (cerrando la app)
+            coro.close()
+            return
         fut.add_done_callback(lambda f: (f.cancelled() or f.exception() or not f.result())
                               and self.command_failed.emit(kind, value))
 

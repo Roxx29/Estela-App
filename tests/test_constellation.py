@@ -77,6 +77,18 @@ class TestConstellationPaint(unittest.TestCase):
         self.paint(1.0)  # 0,25 s atrás (p. ej. el desfase): no retrocede
         self.assertEqual(self.win.cur_state[1], cur)
 
+    def test_letra_mejor_entra_en_la_siguiente_estrofa(self):
+        self.paint(0.5)
+        better = [dict(line) for line in MODEL]
+        self.win.update_lyrics(better)
+        self.paint(1.0)  # misma estrofa: sigue la letra anterior
+        self.assertIs(self.win.raw, MODEL)
+        self.paint(14.2)  # estrofa nueva
+        self.assertIs(self.win.raw, better)
+        self.assertIsNone(self.win.pending)
+        self.win.set_reserved_right(100)
+        self.assertEqual(self.win.reserved, 100)
+
     def test_franja_reservada_sin_recolocar(self):
         self.paint(2.5)
         pts = self.win._stanza(0)[1]

@@ -157,10 +157,7 @@ class RoomPanel(QFrame):
         self.setGeometry(self.window.width() - WIDTH, 0, WIDTH, self.window.height())
 
     def _reserve(self, px):
-        # TODO(estela-constelacion): cuando LyricsWindow exponga set_reserved_right(px), la constelación
-        # dejará libre la franja del panel; mientras no exista, el panel se superpone a la letra.
-        if hasattr(self.window, "set_reserved_right"):
-            self.window.set_reserved_right(px)
+        self.window.set_reserved_right(px)  # la constelación deja libre la franja del panel
 
     def open(self):
         self._place()

@@ -82,7 +82,7 @@ class LyricsWindow(QWidget):
         self.times = []
         self.labels = OrderedDict()  # caché LRU de etiquetas ya dibujadas
         self.rands = {}
-        self.setWindowTitle("BrilloMusical · Letras")
+        self.setWindowTitle("Estela · Letras")
         self.setMinimumSize(480, 270)
         self.setAttribute(Qt.WA_OpaquePaintEvent)
         self.family = _font_family()
@@ -103,6 +103,7 @@ class LyricsWindow(QWidget):
         self.twinklers = []
         self.stanza_cache = {}
         self.shown = None  # estrofa en pantalla
+        self.raw = self.pending = None  # letra recibida y letra mejor a la espera de la siguiente estrofa
         self.trans_t0 = -1e9
         self.old_items, self.last_items, self.leaving_now = [], [], []
         self.animating = False
@@ -135,8 +136,26 @@ class LyricsWindow(QWidget):
 
     def set_lyrics(self, status, lines):
         """lines: modelo {t, end, agent, words[(t, end, texto, coro)]} o la API anterior [(t, texto)]."""
+        self.status, self.pending = status, None
+        self._load(lines)
+        # la última estrofa de la canción anterior termina de irse (no desaparece de golpe)
+        self.old_items = [dict(it) for it in self.last_items] if self.last_items else self.leaving_now
+        self.shown, self.last_items, self.trans_t0 = None, [], time.monotonic()
+        self._update_timer()
+        self.update()
+
+    def update_lyrics(self, lines):
+        """Letra mejor de la misma canción: sin letra en pantalla se muestra ya; si no, al empezar la siguiente estrofa."""
+        if lines is self.raw or lines is self.pending:
+            return
+        if not self.lines:
+            return self.set_lyrics("", lines)
+        self.pending = lines
+
+    def _load(self, lines):
+        self.raw = lines
         self.model = layout.to_model(lines)
-        self.status, self.lines = status, lyrics.legacy(self.model)
+        self.lines = lyrics.legacy(self.model)
         self.times = [t for t, _ in self.lines]
         self.groups = layout.stanzas(self.lines)
         self.chorus = layout.chorus(self.lines, self.groups)  # estribillos: transición de impacto en Automática
@@ -146,11 +165,6 @@ class LyricsWindow(QWidget):
         self.v2 = None  # color de la 2.ª voz: se calcula una vez por canción
         self.cur_state, self.tint = (None, None, 0.0), (None, None, -1e9)
         self.stanza_cache.clear()
-        # la última estrofa de la canción anterior termina de irse (no desaparece de golpe)
-        self.old_items = [dict(it) for it in self.last_items] if self.last_items else self.leaving_now
-        self.shown, self.last_items, self.trans_t0 = None, [], time.monotonic()
-        self._update_timer()
-        self.update()
 
     def set_offset(self, seconds, show=False):
         self.offset = seconds
@@ -205,6 +219,9 @@ class LyricsWindow(QWidget):
         self.backdrop.set_art(art_id, *backdrop_data)
         self.cover.set_art(art_id, *cover_data)
         self.update()
+
+    def set_reserved_right(self, px):
+        self.reserve_right(px)
 
     def reserve_right(self, px):
         """Reserva una franja derecha de `px` píxeles (panel de sala): la constelación se comprime, no se recoloca."""
@@ -468,6 +485,10 @@ class LyricsWindow(QWidget):
         # tras un instrumental (hasta la siguiente línea) no vuelve la estrofa de antes
         after_gap = any(b < pos < b + 1.6 for _, b in self.gaps)
         k = None if gap or after_gap else layout.stanza_of(self.groups, self.line_index(pos))
+        if k != self.shown and self.pending is not None:  # letra mejor: entra con la estrofa nueva
+            self._load(self.pending)
+            self.pending = None
+            k = None if gap or after_gap else layout.stanza_of(self.groups, self.line_index(pos))
         if k != self.shown:  # cambio de estrofa (o salto, o instrumental): transición
             self._start_transition(k, now)
             age = 0.0
