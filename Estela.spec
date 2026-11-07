@@ -5,7 +5,7 @@ a = Analysis(
     ["run.py"],
     datas=[("assets/icon.ico", "assets"), ("assets/remote.html", "assets"), ("extension", "extension")],  # extensión de Chrome: ver la cola
     # YouTube Music integrado: QtWebEngine se importa al abrir su ventana; necesita Network, Qml, Quick y OpenGL
-    hiddenimports=collect_submodules("winrt") + ["PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets"],
+    hiddenimports=collect_submodules("winrt") + collect_submodules("websockets") + ["PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets"],
     # QtQml/QtQuick: sus hooks copian la carpeta qml/ entera (decenas de MB) y WebEngine no usa ningún .qml;
     # las DLL Qt6Qml/Qt6Quick que sí necesita entran igual como dependencia binaria
     excludes=["tkinter", "PySide6.QtPdf", "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtDBus", "PySide6.QtQml",

@@ -78,6 +78,10 @@ READ_JS = LYRICS_JS + r"""(() => {
 })()"""
 COMMANDS = {
     "play": "(v => v && (v.paused ? v.play() : v.pause()))(document.querySelector('video'))",
+    # órdenes de Escuchar juntos (el invitado sigue al anfitrión)
+    "resume": "(v => v && v.paused && v.play())(document.querySelector('video'))",
+    "pause": "(v => v && !v.paused && v.pause())(document.querySelector('video'))",
+    "rate": "(v => v && (v.playbackRate = {arg}))(document.querySelector('video'))",
     "next": "document.querySelector('ytmusic-player-bar .next-button').click()",
     "prev": "document.querySelector('ytmusic-player-bar .previous-button').click()",
     "seek": "document.querySelector('video').currentTime = {arg}",

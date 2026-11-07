@@ -114,7 +114,7 @@ class Controller(QObject):
         self.window.control.connect(self._control)
         self.genre_ready.connect(self._on_genre)
         self.seek = (None, 0.0)  # (destino, hora) del último ±10 s: dos seguidos suman aunque SMTC no haya respondido
-        self.room = RoomPanel(self.window, self.settings, self.watcher)
+        self.room = RoomPanel(self.window, self.settings, _RoomPlayer(self))
         app.aboutToQuit.connect(lambda: self.room.leave(quiet=True))  # antes de parar SMTC: deja la velocidad a 1
         app.aboutToQuit.connect(self.watcher.stop)
         # modo del borde: "auto" decide por canción; uno fijado a mano gana siempre
@@ -234,7 +234,7 @@ class Controller(QObject):
         menu.addAction(anim)
         local.append(menu.addAction("Escuchar juntos…", self._open_room))
         local.append(menu.addAction("Atajos de teclado",
-                                    lambda: self.tray.showMessage("Atajos en la ventana de la letra", HELP)))
+                                    lambda: self.tray.showMessage("Atajos en la ventana de la letra", constellation.HELP)))
         local.append(menu.addAction("Salir de Estela", self._quit))
         for act in local:
             act.setData("local")  # no salen en el móvil
@@ -361,7 +361,10 @@ class Controller(QObject):
             self._send(action)
 
     def _send(self, name, arg=None):
-        (self.ytm if self.active == "ytm" else self.watcher).command(name, arg)
+        if self.active == "ytm":
+            self.ytm.command(name, arg)
+        else:  # "play" de los controles alterna; en SMTC eso es "toggle" ("play" solo reanuda)
+            self.watcher.command("toggle" if name == "play" else name, arg)
 
     def _extension(self):
         """Abre la carpeta de la extensión y explica cómo instalarla en Chrome o Edge."""
@@ -753,6 +756,22 @@ class Controller(QObject):
             self.window.set_lyrics(status, lines)
         else:
             self.window.update_lyrics(lines)  # la primera se pone ya; una mejor, al empezar la siguiente estrofa
+
+
+class _RoomPlayer(QObject):
+    """Órdenes de Escuchar juntos a la fuente que suena: navegador (SMTC) o YouTube Music integrado."""
+    command_failed = Signal(str, object)
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        app.watcher.command_failed.connect(self.command_failed)
+
+    def command(self, kind, value=None):
+        if self.app.active == "ytm":  # sin respuesta de la página: se da por hecha
+            self.app.ytm.command("resume" if kind == "play" else kind, value)
+        else:
+            self.app.watcher.command(kind, value)
 
 
 def main():

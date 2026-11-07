@@ -43,7 +43,6 @@ class MediaWatcher(QObject):
         self._last_hash = None
         self._anchor = {}  # app -> (posición, stamp) de la última foto
         self._last_seen = 0.0
-        self._loop = self._session = None  # sesión de la última foto: las órdenes van a esa
         self._stop = threading.Event()
         self._loop = self._session = self._sid = None  # para mandar órdenes a la sesión que se ve en pantalla
         self._thread = threading.Thread(target=lambda: asyncio.run(self._run()), daemon=True, name="smtc")
@@ -55,7 +54,10 @@ class MediaWatcher(QObject):
         self._loop = None  # órdenes posteriores (p. ej. al salir) no tocan un bucle cerrado
 
     def command(self, kind, value=None):
-        """Orden a la sesión de la última foto desde el hilo de Qt: play, pause, seek (s) o rate."""
+        """Orden a la sesión de la última foto desde el hilo de Qt.
+
+        toggle (Espacio), play, pause, next, prev, seek (s) o rate. Si no se acepta, emite command_failed.
+        """
         loop = self._loop
         if not loop:
             self.command_failed.emit(kind, value)
@@ -73,44 +75,29 @@ class MediaWatcher(QObject):
         s = self._session
         if s is None:
             return False
-        if kind == "play":
-            return await s.try_play_async()
-        if kind == "pause":
-            return await s.try_pause_async()
-        if kind == "seek":
-            return await s.try_change_playback_position_async(int(max(0.0, value) * 10_000_000))
-        if kind == "rate":
-            return await s.try_change_playback_rate_async(value)
-        return False
-
-    def command(self, name, arg=None):
-        """Desde Qt: play / next / prev / seek (segundos). Se ejecuta en el hilo de SMTC."""
-        loop = self._loop
-        if loop is not None:
-            try:
-                asyncio.run_coroutine_threadsafe(self._command(name, arg), loop)
-            except RuntimeError:
-                pass  # saliendo: el bucle ya se cerró
-
-    async def _command(self, name, arg):
-        s = self._session
-        if s is None:
-            return
         try:
-            if name == "play":
+            if kind == "toggle":
                 ok = await s.try_toggle_play_pause_async()
-            elif name == "next":
+            elif kind == "play":
+                ok = await s.try_play_async()
+            elif kind == "pause":
+                ok = await s.try_pause_async()
+            elif kind == "next":
                 ok = await s.try_skip_next_async()
-            elif name == "prev":
+            elif kind == "prev":
                 ok = await s.try_skip_previous_async()
-            elif name == "seek":
-                ok = await s.try_change_playback_position_async(int(arg * 10_000_000))  # en unidades de 100 ns
+            elif kind == "seek":  # en unidades de 100 ns
+                ok = await s.try_change_playback_position_async(int(max(0.0, value) * 10_000_000))
+            elif kind == "rate":
+                ok = await s.try_change_playback_rate_async(value)
             else:
-                return
-            if not ok:
-                log.info("El navegador no aceptó la orden %s", name)
+                return False
         except Exception:
-            log.warning("Orden %s fallida (¿pestaña cerrada?)", name, exc_info=True)
+            log.warning("Orden %s fallida (¿pestaña cerrada?)", kind, exc_info=True)
+            return False
+        if not ok:
+            log.info("El reproductor no aceptó la orden %s", kind)
+        return ok
 
     async def _run(self):
         self._loop = asyncio.get_running_loop()
