@@ -177,10 +177,12 @@ class LyricsWindow(QWidget):
         """Fondo que decide el ambiente (solo cuenta con la opción Automático)."""
         self.backdrop.set_auto(mode)
 
-    def set_transition(self, setting, show=False):
+    def set_transition(self, setting, show=False, persist=True):
+        """persist=False: solo en esta sesión (el invitado de una sala usa la del anfitrión sin guardarla)."""
         if setting in transitions.SETTINGS:
             self.trans_setting = setting
-            self.settings.setValue("lyrics_transition", setting)
+            if persist:
+                self.settings.setValue("lyrics_transition", setting)
             if show:
                 self.toast(f"Transición: {transitions.SETTING_NAMES[setting]}")
 
@@ -385,7 +387,8 @@ class LyricsWindow(QWidget):
         g.setColorAt(1, self._color(0))
         p.fillRect(pm.rect(), g)
         p.end()
-        self.nebula = pm
+        # ampliada una vez a la ventana: dibujarla sin escalar ahorra el filtro suave en cada fotograma
+        self.nebula = pm.scaled(max(1, w), max(1, h), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
 
     def _stanza(self, k):
         """Estrofa k calculada una vez: (palabras por orden de inicio, puntos 0..1, enlaces, inicios, main, coros).
@@ -538,7 +541,7 @@ class LyricsWindow(QWidget):
         if self.nebula is None:
             self._build_nebula()
         p.setOpacity(0.08 + 0.07 * (0.5 + 0.5 * math.sin(2 * math.pi * now / 10)))
-        p.drawPixmap(QRectF(0, 0, w, h), self.nebula, QRectF(self.nebula.rect()))
+        p.drawPixmap(0, 0, self.nebula)
         p.setOpacity(1.0)
 
     def _rand(self, seed, n):
