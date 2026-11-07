@@ -185,7 +185,7 @@ def reason(e):
     s = str(e).lower()
     if isinstance(e, ssl.SSLError) or "certificate" in s or "ssl" in s:
         return "No se pudo comprobar el certificado del servidor de letras (antivirus o proxy)"
-    if isinstance(e, TimeoutError) or "timed out" in s:
+    if isinstance(e, TimeoutError) or "timed out" in s or "no responde" in s:
         return "El servidor de letras no responde · reintentando…"
     if isinstance(e, OSError):
         return "Sin conexión · reintentando…"
@@ -210,6 +210,8 @@ def _query(title, artist, album, duration):
             return out
         except urllib.error.HTTPError as e:  # 404: no está; otro código: se prueba lo siguiente
             online = True
+            if e.code >= 500:  # LRCLIB caído (502…): no es "sin letra", no se guarda y se reintenta
+                err = err or e
             log.info("LRCLIB %s: %s", endpoint, e.code)
         except ValueError as e:  # respondió algo que no es JSON
             online = True
@@ -270,9 +272,19 @@ def fetch(title, artist, album, duration):
             return [tuple(x) for x in lines]
     except (OSError, ValueError):
         pass
+    old = hashlib.sha1(f"{artist}|{title}|{round(duration)}".lower().encode()).hexdigest()
+    try:  # letras guardadas antes de "v2": sirven si tienen letra (sobre todo con LRCLIB caído)
+        with open(os.path.join(CACHE, old + ".json"), encoding="utf-8") as f:
+            lines = json.load(f)
+        if lines:
+            return [tuple(x) for x in lines]
+    except (OSError, ValueError):
+        pass
     lines = _query(title, artist, album, duration)
-    if lines is None or isinstance(lines, Plain):
-        return lines or []  # aproximada o con algún fallo: se muestra, pero no se guarda (la próxima vez se busca)
+    if lines is None:  # alguna consulta falló: no es "sin letra", que la app reintente
+        raise OSError("LRCLIB no responde")
+    if isinstance(lines, Plain):
+        return lines  # aproximada: se muestra, pero no se guarda (la próxima vez se busca)
     if not duration:
         return lines  # sin duración puede ser otra versión: no se guarda en caché
     try:
