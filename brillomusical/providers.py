@@ -3,6 +3,7 @@
 nivel 2 = tiempos por palabra/sílaba, 1 = solo por línea. Fallo de red → OSError; "no hay" → ([], 0).
 """
 import html
+import http.client
 import json
 import re
 import urllib.error
@@ -20,6 +21,18 @@ YOULY = ("https://lyricsplus.prjktla.my.id", "https://lyricsplus.binimum.org")
 NONE = ([], 0)
 
 
+class _HttpsOnly(urllib.request.HTTPRedirectHandler):
+    """Sigue redirecciones solo a https (una a http se queda en error 3xx → OSError)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.startswith("https://"):
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_HttpsOnly)
+
+
 def get(url, params=None, timeout=TIMEOUT):
     """Cuerpo como texto; None si 404 o demasiado grande. Otros fallos HTTP/red → OSError."""
     if params:
@@ -28,12 +41,14 @@ def get(url, params=None, timeout=TIMEOUT):
         return None
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json, */*"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _OPENER.open(req, timeout=timeout) as r:
             body = r.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
         raise
+    except http.client.HTTPException as e:  # p. ej. IncompleteRead: es un fallo de red, no "sin letra"
+        raise OSError(f"respuesta cortada: {e!r}") from e
     if len(body) > MAX_BYTES:
         return None
     return body.decode("utf-8", "replace")

@@ -5,10 +5,10 @@ import json
 import logging
 import os
 import re
+import queue
+import threading
 import time
 import urllib.error
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from concurrent.futures import TimeoutError as FuturesTimeout
 
 from . import providers, ttml
 
@@ -206,31 +206,41 @@ def search(title, artist, album, duration, on_update=None, jobs=None):
     """
     jobs = jobs or providers.PROVIDERS + [("LRCLIB", lrclib)]
     best, failed = None, set()  # best = (líneas, nivel, fuente, prioridad)
-    pool = ThreadPoolExecutor(len(jobs))
-    futures = {pool.submit(fn, title, artist, album, duration): (prio, name) for prio, (name, fn) in enumerate(jobs)}
-    try:
-        for f in as_completed(futures, timeout=TOTAL_S):
-            prio, name = futures[f]
-            try:
-                lines, level = f.result()
-            except OSError as e:
-                log.debug("%s: fallo de red (%s)", name, e)
-                failed.add(name)
-                continue
-            except Exception:  # noqa: BLE001 (un proveedor roto no tumba a los demás)
-                log.warning("%s: respuesta no válida", name, exc_info=True)
-                continue
-            if lines and (best is None or (level, -prio) > (best[1], -best[3])):
-                best = (lines, level, name, prio)
-                log.debug("Letra de %s (nivel %d)", name, level)
-                if on_update:
-                    on_update(lines, name)
-            if best and best[1] == 2 and all(g.done() for g, (p, _) in futures.items() if p < best[3]):
-                break  # ningún pendiente puede ganar ya
-    except FuturesTimeout:
-        failed |= {name for f, (_, name) in futures.items() if not f.done()}
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+    results = queue.Queue()
+
+    def run(prio, name, fn):
+        try:
+            results.put((prio, name, fn(title, artist, album, duration), None))
+        except Exception as e:  # noqa: BLE001 (un proveedor roto no tumba a los demás)
+            results.put((prio, name, None, e))
+
+    # hilos daemon: uno colgado no impide cerrar el .exe
+    for prio, (name, fn) in enumerate(jobs):
+        threading.Thread(target=run, args=(prio, name, fn), daemon=True, name=f"letra-{name}").start()
+    pending = set(range(len(jobs)))
+    deadline = time.monotonic() + TOTAL_S
+    while pending:
+        try:
+            prio, name, result, error = results.get(timeout=max(0.0, deadline - time.monotonic()))
+        except queue.Empty:
+            failed |= {jobs[p][0] for p in pending}
+            break
+        pending.discard(prio)
+        if isinstance(error, OSError):
+            log.debug("%s: fallo de red (%s)", name, error)
+            failed.add(name)
+            continue
+        if error is not None:
+            log.warning("%s: respuesta no válida", name, exc_info=error)
+            continue
+        lines, level = result
+        if lines and (best is None or (level, -prio) > (best[1], -best[3])):
+            best = (lines, level, name, prio)
+            log.debug("Letra de %s (nivel %d)", name, level)
+            if on_update:
+                on_update(lines, name)
+        if best and best[1] == 2 and not any(p < best[3] for p in pending):
+            break  # ningún pendiente puede ganar ya
     return (best[0], best[1], best[2], failed) if best else ([], 0, None, failed)
 
 
