@@ -84,5 +84,68 @@ class TestSongShape(unittest.TestCase):
         self.assertEqual(layout.gaps([(1, "a"), (3, "b")], 12), [])
 
 
+def line(t, end, agent=None, words=None):
+    return {"t": t, "end": end, "agent": agent, "words": words or [(t, end, "x", False)]}
+
+
+class TestModelo(unittest.TestCase):
+    def test_huecos_con_fin_real_y_duo_solapado(self):
+        model = [line(0, 10, "v1"), line(2, 4, "v2"), line(17, 18), line(30, 31)]
+        # 10 → 17 = 7 s (no llega); el v2 acaba antes que el v1: cuenta el fin más tardío
+        self.assertEqual(layout.breaks(model), [(18, 30)])
+        self.assertEqual(layout.breaks([line(9, 10)]), [(0.0, 9)])  # intro ≥ 8 s
+        self.assertEqual(layout.gaps(model, 12), [(20.0, 28.5)])
+
+    def test_cuenta_atras(self):
+        brk = [(18, 30)]
+        self.assertEqual([layout.countdown(brk, p) for p in (26.9, 27.0, 28.5, 29.5, 30.0)], [0, 3, 2, 1, 0])
+
+    def test_palabra_actual_solo_avanza(self):
+        self.assertEqual(layout.advance(5, 10.0, 4, 9.9), 5)  # tirón hacia atrás pequeño
+        self.assertEqual(layout.advance(5, 10.0, 2, 8.5), 2)  # salto > 1 s
+        self.assertEqual(layout.advance(5, 10.0, 6, 10.1), 6)
+        self.assertEqual(layout.advance(None, 0.0, 3, 5.0), 3)
+
+    def test_visibles_con_coros(self):
+        bg = [i % 2 == 1 for i in range(40)]  # impares = coros
+        vis = layout.visible(range(40), 39, bg)
+        self.assertEqual(len(vis), 24)
+        # 6 coros como mucho; aun así sobran 2 → fuera los 2 coros más viejos (no palabras principales)
+        self.assertEqual([i for i in vis if bg[i]], [33, 35, 37, 39])
+        self.assertEqual(sum(not bg[i] for i in vis), 20)
+        vis = layout.visible(range(20), 19, [i % 2 == 1 for i in range(20)])
+        self.assertEqual([i for i in vis if i % 2], [9, 11, 13, 15, 17, 19])  # cabe todo: los 6 más nuevos
+        bg = [i >= 20 for i in range(26)]  # 20 principales + 6 coros = 26 > 24: fuera los 2 coros más viejos
+        self.assertEqual(layout.visible(range(26), 25, bg), list(range(20)) + [22, 23, 24, 25])
+
+    def test_duo_cada_voz_en_su_franja_y_su_cadena(self):
+        words = [("v1", False), ("v2", False), ("v1", False), ("v1", True), ("v2", False), ("v1000", False)] * 3
+        pts, links = layout.arrange(words, 5, duet=True)
+        for (voice, bg), p, ln in zip(words, pts, links):
+            if not bg:
+                lo, hi = layout.VOICE_X[voice]
+                self.assertTrue(lo <= p[0] <= hi, (voice, p))
+            if ln is not None:
+                self.assertEqual(words[ln][0], voice)  # cada cantante su cadena
+                self.assertFalse(words[ln][1])  # se une a una palabra principal
+        self.assertIsNone(links[0])
+        self.assertEqual(links[3], 2)  # el coro, satélite de la palabra anterior de su voz
+        self.assertLess(math.hypot((pts[3][0] - pts[2][0]) * layout.ASPECT, pts[3][1] - pts[2][1]), 0.08)
+
+    def test_franja_reservada(self):
+        self.assertEqual(layout.squeeze(0.9, 0.0, 0.0), 0.9)
+        self.assertAlmostEqual(layout.squeeze(1.0, 0.0, 0.25), 0.75)
+        self.assertEqual(layout.squeeze(0.2, 0.3, 0.25), 0.2)  # a la izquierda de la tarjeta no se mueve
+        self.assertAlmostEqual(layout.squeeze(1.0, 0.3, 0.25), 0.75)
+
+    def test_api_anterior_a_modelo(self):
+        model = layout.to_model([(1.0, "hola mundo"), (5.0, "")])
+        self.assertEqual(model[0]["agent"], None)
+        self.assertEqual([w[2] for w in model[0]["words"]], ["hola", "mundo"])
+        self.assertEqual(model[1]["words"], [])
+        same = [line(0, 1)]
+        self.assertEqual(layout.to_model(same), same)
+
+
 if __name__ == "__main__":
     unittest.main()

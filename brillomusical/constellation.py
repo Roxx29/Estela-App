@@ -15,7 +15,7 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
-from . import backdrop, cover, layout, lyrics, media, transitions
+from . import backdrop, color, cover, layout, lyrics, media, transitions
 from .color import FALLBACK
 
 # tamaños en fracción de la altura de la ventana: (estrella, texto)
@@ -25,6 +25,11 @@ DRAW_LINE = 0.35  # trazo de la línea hacia la palabra nueva
 FLASH, SPARKS = 0.3, 0.5
 BG_STARS, TWINKLERS = 120, 20
 TOAST = 1.5  # avisos breves (desfase, modo de fondo)
+BG_SCALE, BG_ALPHA, BG_IN, BG_WHITE = 0.6, 0.6, 0.25, 0.5  # coros: tamaño, alfa, entrada (s), mezcla con blanco
+TINT = 0.2  # cambio de tinte al cambiar de cantante (s)
+TEXT_TINT = 0.15  # dúos: texto blanco con este poco del color de su voz
+MINI_FLASH, MINI_MIN = 0.2, 0.09  # destello breve al empezar cada trozo cantado de >= 90 ms
+WHITE = (255, 255, 255)
 SEARCHING = "Buscando letra…"
 HELP = "B fondo · C carátula · T transición · ←/→ sincronizar · H atajos"
 
@@ -86,10 +91,15 @@ class LyricsWindow(QWidget):
         self.hd_key = None  # canción cuya portada grande (iTunes) ya está puesta: la de Windows no la pisa
         self.snap = None
         self.lines, self.groups = [], []
+        self.model, self.breaks, self.duet, self.v2 = [], [], False, None
+        self.reserved = 0.0  # franja derecha reservada (px), p. ej. para el panel de sala
+        self.cur_state = (None, None, 0.0)  # (estrofa, palabra actual, posición): la palabra solo avanza
+        self.tint = (None, None, -1e9)  # (voz anterior, voz actual, desde): fundido de 200 ms entre cantantes
         self.status = "Esperando música…"
         self.rgb = FALLBACK
         self.star = _star_path()
-        self.halo = self.nebula = self.bg = None
+        self.halos = {}  # halo por color (cada voz el suyo)
+        self.nebula = self.bg = None
         self.twinklers = []
         self.stanza_cache = {}
         self.shown = None  # estrofa en pantalla
@@ -107,7 +117,8 @@ class LyricsWindow(QWidget):
         self.snap = snap
         if snap and snap["color"] and tuple(snap["color"]) != tuple(self.rgb):
             self.rgb = tuple(snap["color"])
-            self.halo = self.nebula = None  # se regeneran con el color nuevo
+            self.halos.clear()
+            self.nebula = None  # se regeneran con el color nuevo
             self.labels.clear()
         if snap and not snap["ad"]:
             key = (snap["title"], snap["artist"], snap["album"])
@@ -123,11 +134,17 @@ class LyricsWindow(QWidget):
         self.update()
 
     def set_lyrics(self, status, lines):
-        self.status, self.lines = status, lines
-        self.times = [t for t, _ in lines]
-        self.groups = layout.stanzas(lines)
-        self.chorus = layout.chorus(lines, self.groups)  # estribillos: transición de impacto en Automática
-        self.gaps = layout.gaps(lines)  # instrumentales largos: carátula grande
+        """lines: modelo {t, end, agent, words[(t, end, texto, coro)]} o la API anterior [(t, texto)]."""
+        self.model = layout.to_model(lines)
+        self.status, self.lines = status, lyrics.legacy(self.model)
+        self.times = [t for t, _ in self.lines]
+        self.groups = layout.stanzas(self.lines)
+        self.chorus = layout.chorus(self.lines, self.groups)  # estribillos: transición de impacto en Automática
+        self.breaks = layout.breaks(self.model)  # huecos >= 8 s: cuenta atrás
+        self.gaps = layout.gaps(self.model)  # instrumentales largos: carátula grande
+        self.duet = any(line["agent"] == "v2" for line in self.model)
+        self.v2 = None  # color de la 2.ª voz: se calcula una vez por canción
+        self.cur_state, self.tint = (None, None, 0.0), (None, None, -1e9)
         self.stanza_cache.clear()
         # la última estrofa de la canción anterior termina de irse (no desaparece de golpe)
         self.old_items = [dict(it) for it in self.last_items] if self.last_items else self.leaving_now
@@ -187,6 +204,11 @@ class LyricsWindow(QWidget):
         self.hd_key = key
         self.backdrop.set_art(art_id, *backdrop_data)
         self.cover.set_art(art_id, *cover_data)
+        self.update()
+
+    def reserve_right(self, px):
+        """Reserva una franja derecha de `px` píxeles (panel de sala): la constelación se comprime, no se recoloca."""
+        self.reserved = max(0.0, float(px))
         self.update()
 
     def set_cover(self, mode, show=False):
@@ -315,17 +337,43 @@ class LyricsWindow(QWidget):
         self.twinklers = [(rnd.random(), rnd.random(), rnd.uniform(2, 5), rnd.uniform(0, 6.28), rnd.uniform(0.8, 1.6))
                           for _ in range(TWINKLERS)]
 
-    def _build_halo(self):
-        pm = QPixmap(128, 128)
-        pm.fill(Qt.transparent)
-        p = QPainter(pm)
-        g = QRadialGradient(QPointF(64, 64), 64)
-        g.setColorAt(0, self._color(0.9))
-        g.setColorAt(0.25, self._color(0.35))
-        g.setColorAt(1, self._color(0))
-        p.fillRect(pm.rect(), g)
-        p.end()
-        self.halo = pm
+    def _halo(self, rgb, outer=None):
+        """Halo de un color (o de dos tonos: `rgb` dentro, `outer` fuera), pintado una vez."""
+        key = (rgb, outer)
+        pm = self.halos.get(key)
+        if pm is None:
+            pm = QPixmap(128, 128)
+            pm.fill(Qt.transparent)
+            p = QPainter(pm)
+            g = QRadialGradient(QPointF(64, 64), 64)
+            g.setColorAt(0, self._color(0.9, rgb))
+            g.setColorAt(0.25, self._color(0.35, outer or rgb))
+            g.setColorAt(1, self._color(0, outer or rgb))
+            p.fillRect(pm.rect(), g)
+            p.end()
+            self.halos[key] = pm
+        return pm
+
+    def _voice(self, voice):
+        """Color de cada cantante: v1 = portada, v2 = color.duet (una vez por canción), v1000 = mezcla."""
+        if not self.duet or voice not in ("v2", "v1000"):
+            return tuple(self.rgb)
+        if self.v2 is None:
+            snap = self.snap or {}
+            pal = snap.get("palette") or [tuple(self.rgb)]
+            lum = snap["backdrop"][1] if snap.get("backdrop") else 0.5
+            dark = color.mix(pal[0], (0, 0, 0), backdrop.dim_for(lum))  # el fondo ya oscurecido
+            self.v2 = color.duet(pal, dark)
+        return self.v2 if voice == "v2" else color.mix(self.rgb, self.v2, 0.5)
+
+    def _px(self, pt):
+        """Punto normalizado -> píxeles, respetando la franja derecha reservada."""
+        w, h = self.width(), self.height()
+        x = pt[0]
+        if self.reserved > 0:
+            av = self.cover.avoid(w, h)
+            x = layout.squeeze(x, av[2] if av else 0.0, self.reserved / w)
+        return x * w, pt[1] * h
 
     def _build_nebula(self):
         w, h = self.width(), self.height()
@@ -340,14 +388,25 @@ class LyricsWindow(QWidget):
         self.nebula = pm
 
     def _stanza(self, k):
-        """(palabras [(texto, inicio)], puntos 0..1) de la estrofa k, calculado una vez."""
+        """Estrofa k calculada una vez: (palabras por orden de inicio, puntos 0..1, enlaces, inicios, main, coros).
+
+        Cada palabra: {text, t, end, bg, voice}. main[i] = palabras principales antes de i (para el tamaño).
+        """
         if k not in self.stanza_cache:
             words = []
             for li in self.groups[k]:
-                words += zip(lyrics.words(self.lines[li][1]), lyrics.word_times(self.lines, li))
+                line = self.model[li]
+                voice = line["agent"] or "v1"
+                words += [{"text": w[2], "t": w[0], "end": w[1], "bg": w[3], "voice": voice} for w in line["words"]]
+            words.sort(key=lambda wd: wd["t"])  # en un dúo las líneas se solapan
             seed = zlib.crc32(f"{self.snap['title'] if self.snap else ''}|{k}".encode())
             avoid = self.cover.avoid(self.width(), self.height())  # sin estrellas bajo la tarjeta
-            self.stanza_cache[k] = (words, layout.place(len(words), seed, avoid))
+            pts, links = layout.arrange([(wd["voice"], wd["bg"]) for wd in words], seed, avoid, self.duet)
+            main, n = [], 0
+            for wd in words:
+                main.append(n)
+                n += not wd["bg"]
+            self.stanza_cache[k] = (words, pts, links, [wd["t"] for wd in words], main, [wd["bg"] for wd in words])
         return self.stanza_cache[k]
 
     # --- dibujo ---
@@ -417,19 +476,33 @@ class LyricsWindow(QWidget):
         if k is None:
             self.last_items = []
             self._extras(p, P, age, old_pts, [])
-            if not hero:
+            if not self._countdown(p, pos) and not hero:
                 self._message(p, "♪")
             return
 
-        words, pts = self._stanza(k)
-        cur = max(0, sum(1 for _, s in words if s <= pos) - 1)
-        vis = layout.visible(range(len(words)), cur)
+        words, pts, links, starts, main, bgs = self._stanza(k)
+        cur = max(0, bisect.bisect_right(starts, pos) - 1)
+        sk, sc, sp = self.cur_state
+        cur = layout.advance(sc if sk == k else None, sp, cur, pos)  # la palabra actual no retrocede por un tirón
+        self.cur_state = (k, cur, pos)
+        cm = next((i for i in range(cur, -1, -1) if not bgs[i]), None)  # palabra principal actual
+        if cm is not None and words[cm]["voice"] != self.tint[1]:
+            self.tint = (self.tint[1], words[cm]["voice"], now)
+        vis = layout.visible(range(len(words)), cur, bgs)
         items = []
         for i in vis:
-            rank = cur - i  # palabras desde la actual (no confundir con `age` de la transición)
-            size, alpha = ((SIZE_CURRENT, 1.0) if rank == 0 else (SIZE_PREV, 0.85) if rank == 1
-                           else (SIZE_REST, OLD_ALPHA if rank > OLD_AFTER else REST_ALPHA))
-            it = self._item(pts[i], words[i][0], size, alpha, now, i, current=rank == 0)
+            wd = words[i]
+            rank = main[cm] - main[i] if cm is not None else 99  # palabras principales desde la actual
+            if wd["bg"]:  # coro: estrella satélite más pequeña y tenue
+                size = SIZE_PREV if rank <= 1 else SIZE_REST
+                size = (size[0] * BG_SCALE, size[1] * BG_SCALE)
+                alpha = BG_ALPHA * (OLD_ALPHA / REST_ALPHA if rank > OLD_AFTER else 1.0)
+            else:
+                size, alpha = ((SIZE_CURRENT, 1.0) if i == cm else (SIZE_PREV, 0.85) if rank <= 1
+                               else (SIZE_REST, OLD_ALPHA if rank > OLD_AFTER else REST_ALPHA))
+            it = self._item(pts[i], wd["text"], size, alpha, now, i, current=i == cm)
+            it.update(link=links[i], bg=wd["bg"], voice=wd["voice"], age=pos - wd["t"], dur=wd["end"] - wd["t"],
+                      enter=_out_cubic(min(1.0, max(0.0, (pos - wd["t"]) / BG_IN))) if wd["bg"] else 1.0)
             # estado en pantalla según la transición de llegada (se guarda: si cambia a mitad, sin saltos)
             if P is not None:
                 src = old_pts[i] if i < len(old_pts) else (old_pts[-1] if old_pts else None)
@@ -440,8 +513,8 @@ class LyricsWindow(QWidget):
             items.append(it)
         self.last_items = items
         self._extras(p, P, age, old_pts, [(it["x"], it["y"]) for it in items])
-        start = words[cur][1]
-        self._draw(p, items, (pos - start, start))
+        self._draw(p, items, live=True)
+        self._countdown(p, pos)
 
     def _start_transition(self, k, now):
         """Elige estilo y variación para el cambio de estrofa; la vieja guarda su estado real en pantalla."""
@@ -478,62 +551,115 @@ class LyricsWindow(QWidget):
     def _item(self, pt, word, size, alpha, now, i, current=False):
         """Estrella con su posición en pantalla (flota ±3 px) y su titileo."""
         r = self._rand(i * 7919, 5)
-        w, h = self.width(), self.height()
+        h = self.height()
         drift = 6 + 3 * r[0]
-        x = pt[0] * w + 3 * math.sin(2 * math.pi * now / drift + 6.28 * r[1])
-        y = pt[1] * h + 3 * math.cos(2 * math.pi * now / (drift + 1) + 6.28 * r[2])
+        x, y = self._px(pt)
+        x += 3 * math.sin(2 * math.pi * now / drift + 6.28 * r[1])
+        y += 3 * math.cos(2 * math.pi * now / (drift + 1) + 6.28 * r[2])
         tw = 0.85 + 0.15 * math.sin(2 * math.pi * now / (2 + 3 * r[3]) + 6.28 * r[4])
         return {"x": x, "y": y, "word": word, "r": size[0] * h, "font": size[1] * h, "alpha": alpha,
                 "tw": tw, "current": current, "seed": i}
 
-    def _draw(self, p, items, timing):
-        """Dibuja la constelación con el estado en pantalla de cada estrella (dx, dy, s, sa, la, trail)."""
+    def _countdown(self, p, pos):
+        """Hueco >= 8 s: 3 puntos en los últimos 3 s, donde empezará la siguiente estrofa. ¿Se dibujó?"""
+        lit = layout.countdown(self.breaks, pos)
+        if not lit:
+            return False
+        nxt = next((b for a, b in self.breaks if a <= pos < b), pos)
+        k = layout.stanza_of(self.groups, self.line_index(nxt + 0.01))
+        if k is None:
+            return False
+        words, pts = self._stanza(k)[:2]
+        if not pts:
+            return False
+        x, y = self._px(pts[0])
+        rgb, d = self._voice(words[0]["voice"]), max(8.0, 0.022 * self.height())
+        p.setPen(Qt.NoPen)
+        for n in range(layout.COUNTDOWN):
+            on = n < lit  # se apagan de derecha a izquierda: 3, 2, 1
+            p.setBrush(self._color(0.9 if on else 0.18, WHITE if on else rgb))
+            p.drawEllipse(QPointF(x + (n - 1) * d, y), d * 0.18, d * 0.18)
+        return True
+
+    def _draw(self, p, items, live=False):
+        """Dibuja la constelación con el estado en pantalla de cada estrella (dx, dy, s, sa, la, trail).
+
+        Cada cantante tiene su cadena de líneas (`link`); la de un coro es discontinua y fina.
+        live: la estrofa que suena (líneas que se trazan hacia cada palabra nueva, destellos); si no, la que se va.
+        """
         if not items:
             return
-        if self.halo is None:
-            self._build_halo()
-        # líneas: la última se traza hacia la palabra nueva
-        grow = _out_cubic(min(1.0, timing[0] / DRAW_LINE)) if timing else 1.0
-        for n, (a, b) in enumerate(zip(items, items[1:])):
-            last = n == len(items) - 2
+        by_seed = {it["seed"]: it for it in items}
+        for n, b in enumerate(items):
+            a = by_seed.get(b["link"]) if "link" in b else (items[n - 1] if n else None)
+            if a is None:
+                continue
             pa, pb = QPointF(a["dx"], a["dy"]), QPointF(b["dx"], b["dy"])
-            if last and grow < 1:
+            grow = _out_cubic(min(1.0, max(0.0, b["age"] / DRAW_LINE))) if live and "age" in b else 1.0
+            if grow < 1:
                 pb = pa + (pb - pa) * grow
-            fade = min(a["sa"], b["sa"])
+            fade = min(a["sa"], b["sa"]) * b.get("enter", 1.0)
             if "ox" in a:  # al salir, una línea que se estira más del doble se apaga (no cruza la pantalla)
                 base = math.hypot(a["ox"] - b["ox"], a["oy"] - b["oy"]) + 1
                 fade *= max(0.0, min(1.0, 2 - math.hypot(pa.x() - pb.x(), pa.y() - pb.y()) / base))
             if fade > 0.01:
-                p.setPen(QPen(self._color((0.6 if last and grow < 1 else 0.35) * fade), 1))
+                rgb = self._voice(b.get("voice"))
+                if b.get("bg"):
+                    pen = QPen(self._color(0.35 * BG_ALPHA * fade, color.mix(rgb, WHITE, BG_WHITE)), 0.8, Qt.DashLine)
+                else:
+                    pen = QPen(self._color((0.6 if grow < 1 else 0.35) * fade, rgb), 1)
+                p.setPen(pen)
                 p.drawLine(pa, pb)
+        f_tint = min(1.0, (time.monotonic() - self.tint[2]) / TINT)
         for it in items:
-            f = it["sa"]
+            enter = it.get("enter", 1.0)
+            f = it["sa"] * enter
             if f <= 0.01 and it["la"] <= 0.01:
                 continue
-            pt, r = QPointF(it["dx"], it["dy"]), it["r"] * it["s"]
+            voice, bg = it.get("voice"), it.get("bg")
+            rgb = self._voice(voice)
+            if bg:
+                rgb = color.mix(rgb, WHITE, BG_WHITE)
+            pt, r = QPointF(it["dx"], it["dy"]), it["r"] * it["s"] * enter
             if it["trail"] > 1:  # estela (lluvia)
-                p.setPen(QPen(self._color(0.5 * f), 1.2))
+                p.setPen(QPen(self._color(0.5 * f, rgb), 1.2))
                 p.drawLine(QPointF(pt.x(), pt.y() - it["trail"]), pt)
-            if it["current"] and timing:
-                t = min(1.0, timing[0] / FLASH)
-                r *= 0.6 + 0.4 * _out_back(t)  # destello: 0,6 → 1,15 → 1
-                self._sparks(p, pt, it["r"] * it["s"], timing[0], it["seed"], f)
+            age = it.get("age", 1e9) if live else 1e9
+            if it["current"] and live:
+                t = min(1.0, age / FLASH)
+                r *= 0.6 + 0.4 * _out_back(t)  # destello: 0,6 -> 1,15 -> 1
+                self._sparks(p, pt, it["r"] * it["s"], age, it["seed"], f)
             a = it["alpha"] * it["tw"] * f
+            star_a = a
+            halo = self._halo(tuple(self.rgb), self.v2) if self.duet and voice == "v1000" and not bg else self._halo(rgb)
+            target = QRectF(pt.x() - r * 3, pt.y() - r * 3, r * 6, r * 6)
+            if it["current"] and live and f_tint < 1 and self.tint[0] is not None:  # fundido entre cantantes
+                p.setOpacity(min(1.0, a) * (1 - f_tint))
+                p.drawPixmap(target, self._halo(self._voice(self.tint[0])), QRectF(0, 0, 128, 128))
+                a *= f_tint
             p.setOpacity(min(1.0, a))
-            p.drawPixmap(QRectF(pt.x() - r * 3, pt.y() - r * 3, r * 6, r * 6), self.halo, QRectF(self.halo.rect()))
+            p.drawPixmap(target, halo, QRectF(0, 0, 128, 128))
+            if 0 <= age < MINI_FLASH and it.get("dur", 0) >= MINI_MIN:  # mini destello al empezar a cantarse
+                k = 1 - age / MINI_FLASH
+                rr = r * (1.2 + 0.8 * (1 - k))
+                p.setOpacity(min(1.0, 0.8 * k * f))
+                p.drawPixmap(QRectF(pt.x() - rr, pt.y() - rr, 2 * rr, 2 * rr), self._halo(WHITE), QRectF(0, 0, 128, 128))
             p.setOpacity(1.0)
             p.save()
             p.translate(pt)
             p.scale(r, r)
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor(255, 255, 255, round(255 * min(1.0, a))) if it["current"] else self._color(min(1.0, a + 0.2)))
+            p.setBrush(self._color(min(1.0, star_a), WHITE) if it["current"] else self._color(min(1.0, star_a + 0.2), rgb))
             p.drawPath(self.star)
             p.restore()
             if it["la"] > 0.01:
-                self._label(p, pt, it, r, it["la"], it["s"])
+                self._label(p, pt, it, r, it["la"] * enter, it["s"], rgb, live)
 
     def _text_pixmap(self, text, px, bold, rgb, glow):
-        """Texto dibujado una vez en una imagen: se mueve con precisión subpíxel sin vibrar."""
+        """Texto dibujado una vez en una imagen: se mueve con precisión subpíxel sin vibrar.
+
+        glow: False, True (color de la portada) o un color (el de la voz).
+        """
         key = (text, round(px), bold, rgb, glow)
         pm = self.labels.get(key)
         if pm is None:
@@ -554,8 +680,8 @@ class LyricsWindow(QWidget):
                 q.drawText(base + QPointF(dx, dy), text)
             q.setPen(QColor(0, 0, 0, 120))
             q.drawText(base + QPointF(0, 2), text)
-            if glow:  # halo del color de la portada alrededor del texto
-                q.setPen(self._color(0.3))
+            if glow:  # halo del color de la portada (o de la voz) alrededor del texto
+                q.setPen(self._color(0.3, glow if isinstance(glow, tuple) else None))
                 for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
                     q.drawText(base + QPointF(dx, dy), text)
             q.setPen(QColor(*rgb))
@@ -568,17 +694,38 @@ class LyricsWindow(QWidget):
             self.labels.move_to_end(key)
         return pm
 
-    def _label(self, p, pt, it, r, fade, scale=1.0):
+    def _label(self, p, pt, it, r, fade, scale=1.0, rgb=None, live=False):
+        """Palabra junto a su estrella. La actual se rellena de izquierda a derecha mientras se canta (karaoke):
+        dos imágenes cacheadas (sin rellenar / rellena) y la rellena recortada, sin trazados por fotograma."""
         current = it["current"]
-        # las no actuales: color de la portada aclarado un 25 % para no perderse sobre un fondo del mismo tono
-        rgb = (255, 255, 255) if current else tuple(round(c + (255 - c) * 0.25) for c in self.rgb)
-        pm = self._text_pixmap(it["word"], it["font"], current, rgb, current)
+        rgb = rgb or tuple(self.rgb)
+        if self.duet:  # dúos: texto blanco con un leve tinte; el color va en estrella, halo y líneas
+            tinted = color.mix(WHITE, rgb, TEXT_TINT)
+        else:  # color de la portada aclarado un 25 % para no perderse sobre un fondo del mismo tono
+            tinted = color.mix(rgb, WHITE, 0.25)
+        glow = (rgb if self.duet else True) if current else False
+        pm = self._text_pixmap(it["word"], it["font"], current, WHITE if current else tinted, glow)
         dpr = pm.devicePixelRatio()
         pw, ph = pm.width() / dpr * scale, pm.height() / dpr * scale  # escala con el viaje (suavizada)
         below = it["seed"] % 2 == 1
         y = pt.y() + r - 2 if below else pt.y() - r + 2 - ph
-        p.setOpacity(min(1.0, it["alpha"] * fade))
-        p.drawPixmap(QRectF(pt.x() - pw / 2, y, pw, ph), pm, QRectF(pm.rect()))
+        x = pt.x() - pw / 2
+        alpha = min(1.0, it["alpha"] * fade)
+        fill = 1.0
+        if current and live and it.get("dur", 0) > 0:
+            fill = max(0.0, min(1.0, it["age"] / it["dur"]))
+        if fill < 1:  # sin rellenar debajo, la rellena recortada encima (mismo tamaño: mismo texto y letra)
+            base = self._text_pixmap(it["word"], it["font"], True, color.mix(tinted, (0, 0, 0), 0.25), False)
+            p.setOpacity(alpha * 0.75)
+            p.drawPixmap(QRectF(x, y, pw, ph), base, QRectF(base.rect()))
+            pad = 4 * scale  # margen de _text_pixmap
+            cut = pad + fill * (pw - 2 * pad)
+            if cut > 0:
+                p.setOpacity(alpha)
+                p.drawPixmap(QRectF(x, y, cut, ph), pm, QRectF(0, 0, cut / pw * pm.width(), pm.height()))
+        else:
+            p.setOpacity(alpha)
+            p.drawPixmap(QRectF(x, y, pw, ph), pm, QRectF(pm.rect()))
         p.setOpacity(1.0)
 
     def _sparks(self, p, pt, r, age, seed, fade):
@@ -608,7 +755,7 @@ class LyricsWindow(QWidget):
             m.update(dx=x, dy=y, s=it["s"] * s, sa=it["sa"] * sa, la=it["la"] * la, trail=trail, current=False,
                      ox=it["dx"], oy=it["dy"])
             moved.append(m)
-        self._draw(p, moved, None)
+        self._draw(p, moved)
         self.leaving_now = moved  # su estado real ahora, por si empieza otra transición a mitad
         return pts
 
